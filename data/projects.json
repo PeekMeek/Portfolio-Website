@@ -279,6 +279,30 @@
           "date": "2026-11-15",
           "note": "I added a cable cover so that wires will not be seen from the side panel",
           "file": "projects/3d-printed-portable-pc/v1.step"
+        },
+        {
+          "id": "v2",
+          "date": "2026-11-15",
+          "note": "I added mounting holes for the cable cover. I am using M3 socket head screws to secure the assembly into place. I am also using this part to secure the two pieces together",
+          "file": "projects/3d-printed-portable-pc/v2.step",
+          "changes": {
+            "V1_GPU_Test-5": "added"
+          },
+          "removed": [
+            "V1_GPU_Test-4"
+          ]
+        },
+        {
+          "id": "v3",
+          "date": "2026-11-15",
+          "note": "Added M3 socket head holes to secure the cable mount with the base assembly. I am also using this cable mount to secure the frame into place.",
+          "file": "projects/3d-printed-portable-pc/v3.step",
+          "changes": {
+            "V1_GPU_Test-6": "added"
+          },
+          "removed": [
+            "V1_GPU_Test-5"
+          ]
         }
       ]
     }
