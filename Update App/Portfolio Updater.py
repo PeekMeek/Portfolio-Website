@@ -111,27 +111,115 @@ def save_data(root, data):
     f.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", "utf-8")
 
 
+def set_cover(root, proj, src):
+    """Copy a picture in as the project's card image. Returns its size in bytes."""
+    src = Path(src)
+    d = Path(root) / "projects" / proj["id"]
+    d.mkdir(parents=True, exist_ok=True)
+    for old in d.glob("cover.*"):
+        old.unlink()
+    dest = d / ("cover" + src.suffix.lower())
+    shutil.copy2(src, dest)
+    proj["image"] = f"projects/{proj['id']}/{dest.name}"
+    return dest.stat().st_size
+
+
 def slug(title):
     return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "project"
 
 
-def add_version(root, proj, note, src):
-    """Copy the STEP file in, work out what changed, append the version."""
+def model_key(name):
+    """A model is identified by its STEP file name, ignoring case and the .step/.stp ending."""
+    return re.sub(r"\.[^.\\/]+$", "", str(name or "")).strip().lower()
+
+
+def group_of(proj, name):
+    """The project's versions that came from a STEP file with this name."""
+    k = model_key(name)
+    return [v for v in proj["versions"] if v.get("source") and model_key(v["source"]) == k]
+
+
+def has_unnamed(proj):
+    """True if some versions were saved before file names were tracked."""
+    return any(not v.get("source") for v in proj["versions"])
+
+
+def latest_for(proj, name):
+    """Latest saved version for this file name, else the latest unnamed (older) one."""
+    g = group_of(proj, name)
+    if g:
+        return g[-1]
+    return next((v for v in reversed(proj["versions"]) if not v.get("source")), None)
+
+
+def windows_of(proj):
+    """[(label, key, versions)] for each window, in the order the site shows them."""
+    out = {}
+    for v in proj["versions"]:
+        k = model_key(v.get("source"))
+        if k not in out:
+            out[k] = [proj["title"] + " (no file name)", []]
+        out[k][1].append(v)
+        if v.get("source"):
+            out[k][0] = v["source"]
+    return [(label, k, vs) for k, (label, vs) in out.items()]
+
+
+def inside(root, path):
+    return Path(root).resolve() in Path(path).resolve().parents
+
+
+def delete_window(root, proj, key):
+    """Remove one window's versions and their copied STEP files. Returns the count removed."""
     root = Path(root)
+    gone = [v for v in proj["versions"] if model_key(v.get("source")) == key]
+    proj["versions"] = [v for v in proj["versions"] if model_key(v.get("source")) != key]
+    for v in gone:
+        if "file" not in v or not inside(root, root / v["file"]):
+            continue
+        f = root / v["file"]
+        for p in (f, f.with_suffix(".parts.json")):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        try:
+            f.parent.rmdir()  # only succeeds when the folder is now empty
+        except OSError:
+            pass
+    return len(gone)
+
+
+def add_version(root, proj, note, src, adopt=False):
+    """Copy the STEP file in, work out what changed, append the version.
+    Each STEP file name is its own model with its own version history.
+    adopt=True claims older, unnamed versions for this file name."""
+    root, src = Path(root), Path(src)
     vs = proj["versions"]
-    vid = f"v{len(vs) + 1}"
-    rel = f"projects/{proj['id']}/{vid}.step"
-    dest = root / rel
+    if adopt:
+        for old_v in vs:
+            if not old_v.get("source"):
+                old_v["source"] = src.name
+    group = group_of(proj, src.name)
+    n = len(group) + 1
+    folder = root / "projects" / proj["id"] / slug(Path(src.name).stem)
+    while (folder / f"v{n}.step").exists():
+        n += 1
+    vid = f"v{n}"
+    dest = folder / f"{vid}.step"
+    rel = dest.relative_to(root).as_posix()
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
     new = part_hashes(dest)
     dest.with_suffix(".parts.json").write_text(json.dumps(new, indent=1), "utf-8")
-    v = {"id": vid, "date": date.today().isoformat(), "note": note, "file": rel}
-    msg = f"{vid}: {len(new)} parts found."
+    v = {"id": vid, "date": date.today().isoformat(), "note": note, "source": src.name, "file": rel}
+    msg = f"{src.name} {vid}: {len(new)} parts found."
+    if not group:
+        msg += " New model, so it has its own window."
     if not new:
         msg += " No named parts were found, so no change highlighting."
-    elif vs and "file" in vs[-1]:
-        prev = root / vs[-1]["file"]
+    elif group and "file" in group[-1]:
+        prev = root / group[-1]["file"]
         side = prev.with_suffix(".parts.json")
         old = json.loads(side.read_text("utf-8")) if side.exists() else (part_hashes(prev) if prev.exists() else None)
         if old is not None:
@@ -192,11 +280,23 @@ class Prompt(tk.Toplevel):
             ttk.Label(self, text=k + (" (comma separated)" if k == "Tags" else "")).grid(row=2 + i, column=0, **pad)
             self.f[k] = ttk.Entry(self, width=41)
             self.f[k].grid(row=2 + i, column=1, **pad)
-        ttk.Label(self, text="What did you change?").grid(row=5, column=0, **pad)
+        ttk.Label(self, text="Card picture (optional)").grid(row=5, column=0, **pad)
+        pf = ttk.Frame(self)
+        pf.grid(row=5, column=1, **pad)
+        self.pic = tk.StringVar()
+        ttk.Entry(pf, textvariable=self.pic, width=31, state="readonly").pack(side="left")
+        ttk.Button(pf, text="Browse", command=self.pick).pack(side="left", padx=(4, 0))
+        ttk.Label(self, text="What did you change?").grid(row=6, column=0, **pad)
         self.note = tk.Text(self, width=40, height=5, wrap="word")
-        self.note.grid(row=5, column=1, **pad)
+        self.note.grid(row=6, column=1, **pad)
+        self.hint = ttk.Label(self, wraplength=430, font=("Segoe UI", 9, "bold"))
+        self.hint.grid(row=7, column=0, columnspan=2, **pad)
+        self.adopt = tk.BooleanVar(value=False)  # a new file name gets its own window unless you say otherwise
+        self.adopt_box = ttk.Checkbutton(self, variable=self.adopt, command=self.update_hint,
+                                         text="Earlier versions of this project came from this same file")
+        self.adopt_box.grid(row=8, column=0, columnspan=2, **pad)
         b = ttk.Frame(self)
-        b.grid(row=6, column=0, columnspan=2, pady=8)
+        b.grid(row=9, column=0, columnspan=2, pady=8)
         ttk.Button(b, text="Save version", command=self.ok).pack(side="left", padx=6)
         ttk.Button(b, text="Skip", command=self.destroy).pack(side="left")
         self.refresh()
@@ -205,10 +305,40 @@ class Prompt(tk.Toplevel):
         self.note.focus_set()
         app.root.wait_window(self)
 
+    def pick(self):
+        f = filedialog.askopenfilename(parent=self, filetypes=[("Pictures", "*.png *.jpg *.jpeg *.webp *.gif")])
+        if f:
+            self.pic.set(f)
+
     def refresh(self):
         state = "normal" if self.proj.get() == NEW else "disabled"
         for e in self.f.values():
             e.config(state=state)
+        self.update_hint()
+
+    def selected(self):
+        return next((p for p in self.app.data()["projects"] if p["title"] == self.proj.get()), None)
+
+    def can_adopt(self):
+        """Older versions have no file name yet, and this name matches no window."""
+        p = self.selected()
+        return bool(p and has_unnamed(p) and not group_of(p, self.path.name))
+
+    def update_hint(self):
+        p, name = self.selected(), self.path.name
+        if p is None:
+            text = f'A new window for "{name}" will be created.'
+        elif group_of(p, name):
+            text = f'This adds a version to the "{name}" window.'
+        elif self.can_adopt() and self.adopt.get():
+            text = f'This adds a version to the project\'s existing window, which will be named "{name}".'
+        else:
+            text = f'New file name: this creates a new window for "{name}".'
+        self.hint.config(text=text)
+        if self.can_adopt():
+            self.adopt_box.grid()
+        else:
+            self.adopt_box.grid_remove()
 
     def ok(self):
         note, new = self.note.get("1.0", "end").strip(), self.proj.get() == NEW
@@ -217,8 +347,66 @@ class Prompt(tk.Toplevel):
         if new and not self.f["Title"].get().strip():
             return messagebox.showwarning("Missing title", "Give the new project a title.", parent=self)
         fields = {k: e.get().strip() for k, e in self.f.items()} if new else None
-        if self.app.save(self.path, self.proj.get(), note, fields):
+        adopt = self.can_adopt() and self.adopt.get()
+        if self.app.save(self.path, self.proj.get(), note, fields, self.pic.get(), adopt):
             self.destroy()
+
+
+class Manage(tk.Toplevel):
+    """Pick a project and delete one of its windows."""
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        self.title("Remove a window")
+        self.resizable(False, False)
+        pad = {"padx": 10, "pady": 4, "sticky": "w"}
+        ttk.Label(self, text="Project").grid(row=0, column=0, **pad)
+        self.proj = ttk.Combobox(self, state="readonly", width=45)
+        self.proj.grid(row=0, column=1, **pad)
+        self.proj.bind("<<ComboboxSelected>>", lambda e: self.fill())
+        ttk.Label(self, text="Windows").grid(row=1, column=0, sticky="nw", padx=10, pady=4)
+        self.lb = tk.Listbox(self, width=52, height=8, exportselection=False)
+        self.lb.grid(row=1, column=1, **pad)
+        b = ttk.Frame(self)
+        b.grid(row=2, column=0, columnspan=2, pady=8)
+        ttk.Button(b, text="Delete window", command=self.delete).pack(side="left", padx=6)
+        ttk.Button(b, text="Close", command=self.destroy).pack(side="left")
+        self.load()
+        self.transient(app.root)
+        self.grab_set()
+
+    def load(self):
+        self.data = self.app.data()
+        titles = [p["title"] for p in self.data["projects"]]
+        self.proj["values"] = titles
+        if self.proj.get() not in titles:
+            self.proj.set(titles[0] if titles else "")
+        self.fill()
+
+    def project(self):
+        return next((p for p in self.data["projects"] if p["title"] == self.proj.get()), None)
+
+    def fill(self):
+        self.lb.delete(0, "end")
+        p = self.project()
+        self.wins = windows_of(p) if p else []
+        for label, _, vs in self.wins:
+            self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
+
+    def delete(self):
+        sel = self.lb.curselection()
+        if not sel:
+            return messagebox.showinfo("Remove a window", "Select a window first.", parent=self)
+        label, key, vs = self.wins[sel[0]]
+        p = self.project()
+        msg = (f'Delete the "{label}" window and its {len(vs)} version(s)?\n\n'
+               "Its STEP copies are removed from the portfolio folder. Your original exports "
+               "are not touched, and git history keeps a copy if you need it back.")
+        if len(self.wins) == 1:
+            msg += f'\n\nThis is the project\'s only window, so the whole "{p["title"]}" project and its card are removed too.'
+        if messagebox.askyesno("Delete window", msg, icon="warning", parent=self):
+            if self.app.remove_window(p["title"], key, label):
+                self.load()
 
 
 class App:
@@ -229,7 +417,7 @@ class App:
             self.cfg = {}
         r = self.root = tk.Tk()
         r.title("Portfolio Updater")
-        r.geometry("600x420")
+        r.geometry("600x460")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
         self.v_watch = tk.StringVar(value=self.cfg.get("watch", ""))
         self.v_on = tk.BooleanVar(value=False)
@@ -246,9 +434,10 @@ class App:
         ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=3, column=0, columnspan=2, sticky="w")
         ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
         ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
+        ttk.Button(f, text="Remove a window", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
         self.out = tk.Text(f, height=12, state="disabled", wrap="word")
-        self.out.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
-        f.rowconfigure(4, weight=1)
+        self.out.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
+        f.rowconfigure(5, weight=1)
         r.protocol("WM_DELETE_WINDOW", self.close)
         r.after(500, self.autostart)
 
@@ -356,9 +545,10 @@ class App:
         for p in files:
             s = self.sig(p)
             proj = next((x for x in data["projects"] if x["title"] == links.get(str(p))), None)
-            if proj and proj["versions"]:
+            lv = latest_for(proj, p.name) if proj else None  # latest version of this file's own window
+            if lv:
                 try:
-                    old, new = saved_parts(root, proj["versions"][-1]), part_hashes(p)
+                    old, new = saved_parts(root, lv), part_hashes(p)
                 except Exception as e:
                     self.log(f"Could not read {p.name}: {e}")
                     continue
@@ -391,7 +581,7 @@ class App:
         if f:
             Prompt(self, Path(f))
 
-    def save(self, path, choice, note, new):
+    def save(self, path, choice, note, new, picture="", adopt=False):
         root = Path(self.v_root.get())
         try:
             data = load_data(root)
@@ -405,7 +595,10 @@ class App:
                 data["projects"].append(proj)
             else:
                 proj = next(p for p in data["projects"] if p["title"] == choice)
-            msg = add_version(root, proj, note, path)
+            msg = add_version(root, proj, note, path, adopt)
+            if picture:
+                size = set_cover(root, proj, picture)
+                msg += " Card picture saved." + (" It is large, which will slow the home page." if size > 1_500_000 else "")
             save_data(root, data)
         except Exception as e:
             messagebox.showerror("Could not save", str(e))
@@ -413,12 +606,44 @@ class App:
         self.cfg["last"] = proj["title"]
         self.cfg.setdefault("links", {})[str(path)] = proj["title"]  # lets Refresh compare this file later
         self.log(f"Saved {proj['title']}. {msg}")
-        if self.v_pub.get():
-            if (root / ".git").exists():
-                self.log("Publishing...")
-                publish(root, f"{proj['title']}: {note[:60]}", lambda t: self.root.after(0, self.log, t))
-            else:
-                self.log("Not published: the portfolio folder is not a git repository.")
+        self.push(root, f"{proj['title']}: {note[:60]}")
+        return True
+
+    def push(self, root, message):
+        if not self.v_pub.get():
+            return
+        if (Path(root) / ".git").exists():
+            self.log("Publishing...")
+            publish(root, message, lambda t: self.root.after(0, self.log, t))
+        else:
+            self.log("Not published: the portfolio folder is not a git repository.")
+
+    def manage(self):
+        if self.ready():
+            Manage(self)
+
+    def remove_window(self, title, key, label):
+        root = Path(self.v_root.get())
+        try:
+            data = load_data(root)
+            proj = next(p for p in data["projects"] if p["title"] == title)
+            n = delete_window(root, proj, key)
+            emptied = not proj["versions"]
+            if emptied:
+                data["projects"].remove(proj)
+                d = root / "projects" / proj["id"]
+                if d.is_dir() and inside(root, d):
+                    shutil.rmtree(d, ignore_errors=True)
+            save_data(root, data)
+        except Exception as e:
+            messagebox.showerror("Could not delete", str(e))
+            return False
+        links = self.cfg.get("links", {})
+        for path in [k for k, t in links.items() if t == title and (emptied or model_key(Path(k).name) == key)]:
+            links.pop(path)
+        self.log(f'Deleted the "{label}" window from {title} ({n} version(s)).'
+                 + (" The project had no windows left, so it was removed." if emptied else ""))
+        self.push(root, f"{title}: removed {label}")
         return True
 
 
