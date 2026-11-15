@@ -319,6 +319,13 @@
           "removed": [
             "V1_GPU_Test-6"
           ]
+        },
+        {
+          "id": "v1",
+          "date": "2026-11-15",
+          "note": "Test",
+          "source": "V1_GPU_Test-6.stp",
+          "file": "projects/3d-printed-portable-pc/v1-gpu-test-6/v1.step"
         }
       ]
     }
