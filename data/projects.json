@@ -333,6 +333,13 @@
           "note": "Added holes for USB ports, power button and ventilation for the GPU",
           "source": "V1_Case_Base.stp",
           "file": "projects/3d-printed-portable-pc/v1-case-base/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2026-11-15",
+          "note": "Added ventilation for the CPU cooler",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v1.step"
         }
       ]
     }
