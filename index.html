@@ -56,6 +56,11 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;margin:0;text-align:center;color:var(--mute);pointer-events:none}
 .overlay:empty{display:none}
 .desc{margin:14px 0 0;max-width:70ch;white-space:pre-line}
+/* the assembly is the main model: full width, centered, ahead of the parts */
+.win.asm{grid-column:1/-1}
+.win.asm .viewer{height:min(68vh,640px)}
+.win.asm .desc{margin:18px auto 0;text-align:center;font-size:1.1rem}
+.win.asm + .win:last-child{grid-column:1/-1}
 /* part windows: change highlighting, status line and version list */
 .bar{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;padding:12px 0 4px;font-size:.95rem}
 .bar label{cursor:pointer}
@@ -135,14 +140,61 @@ async function loadParts(v) {
   return parts;
 }
 
+// Designcenter convention: Z is up. VIEW_DIR is where the camera sits relative to the
+// model, matching the isometric view in Designcenter (X toward the left, Y toward the
+// lower left, Z up). Change these three numbers to load from a different corner.
+const VIEW_DIR = new THREE.Vector3(-1, 1, 1).normalize();
+const AXES = [
+  {dir: new THREE.Vector3(1, 0, 0), color: 0xff4f4f, label: "X"},
+  {dir: new THREE.Vector3(0, 1, 0), color: 0x4fdc6a, label: "Y"},
+  {dir: new THREE.Vector3(0, 0, 1), color: 0x4f8dff, label: "Z"},
+];
+const TRIAD_SIZE = 96;  // px
+
+// Small XYZ triad, like the one in Designcenter's corner. It turns with the camera.
+function makeTriad() {
+  const scene = new THREE.Scene();
+  const cam = new THREE.OrthographicCamera(-1.55, 1.55, 1.55, -1.55, 0.1, 10);
+  const cube = new THREE.BoxGeometry(0.42, 0.42, 0.42);
+  scene.add(new THREE.Mesh(cube, new THREE.MeshBasicMaterial({color: 0x8a8684, transparent: true, opacity: 0.55})));
+  scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(cube), new THREE.LineBasicMaterial({color: 0xefe8e6})));
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  AXES.forEach(a => {
+    const mat = new THREE.MeshBasicMaterial({color: a.color});
+    const arm = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.78, 12), mat);
+    shaft.position.y = 0.39;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.26, 16), mat);
+    head.position.y = 0.91;
+    arm.add(shaft, head);
+    arm.quaternion.setFromUnitVectors(yAxis, a.dir);
+    scene.add(arm);
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d");
+    g.font = "bold 48px Archivo, sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "#" + a.color.toString(16).padStart(6, "0");
+    g.fillText(a.label, 32, 34);
+    const label = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false}));
+    label.position.copy(a.dir).multiplyScalar(1.32);
+    label.scale.setScalar(0.42);
+    scene.add(label);
+  });
+  return {scene, cam};
+}
+
 // Each model (STEP file name) gets its own viewer.
 function createViewer(el) {
   const r = new THREE.WebGLRenderer({antialias: true, alpha: true});
   r.setPixelRatio(Math.min(devicePixelRatio, 2));
+  r.autoClear = false;
   el.appendChild(r.domElement);
   const scene = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 10000);
+  const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 10000);
+  cam.up.set(0, 0, 1);  // must be set before the controls are created
   const ctl = new THREE.OrbitControls(cam, r.domElement);
+  const triad = makeTriad();
   ctl.enableDamping = true;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.95));
   const sun = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -162,7 +214,24 @@ function createViewer(el) {
   let visible = true;  // windows scrolled out of view stop drawing
   const io = new IntersectionObserver(e => { visible = e[0].isIntersecting; });
   io.observe(el);
-  r.setAnimationLoop(() => { if (visible) { ctl.update(); r.render(scene, cam); } });
+  r.setAnimationLoop(() => {
+    if (!visible) return;
+    ctl.update();
+    const w = el.clientWidth, h = el.clientHeight;
+    r.setScissorTest(false);
+    r.setViewport(0, 0, w, h);
+    r.clear();
+    r.render(scene, cam);
+    // triad in the bottom-right corner (the file name label is bottom-left)
+    triad.cam.quaternion.copy(cam.quaternion);
+    triad.cam.position.set(0, 0, 4).applyQuaternion(cam.quaternion);
+    const x = w - TRIAD_SIZE - 6;
+    r.setScissorTest(true);
+    r.setScissor(x, 6, TRIAD_SIZE, TRIAD_SIZE);
+    r.setViewport(x, 6, TRIAD_SIZE, TRIAD_SIZE);
+    r.clearDepth();
+    r.render(triad.scene, triad.cam);
+  });
   return {group, cam, ctl, dispose() { r.setAnimationLoop(null); ro.disconnect(); io.disconnect(); r.dispose(); }};
 }
 
@@ -179,8 +248,9 @@ function frame(view) {
   if (box.isEmpty()) return;
   const c = box.getCenter(new THREE.Vector3()), d = box.getSize(new THREE.Vector3()).length();
   view.cam.near = d / 100; view.cam.far = d * 100; view.cam.updateProjectionMatrix();
-  view.cam.position.copy(c).add(new THREE.Vector3(1, 0.8, 1).normalize().multiplyScalar(d * 1.4));
+  view.cam.position.copy(c).addScaledVector(VIEW_DIR, d * 1.9);
   view.ctl.target.copy(c);
+  view.ctl.update();
 }
 
 function render(view, parts, {changes = {}, ghosts = [], highlight = false, keepCam = false} = {}) {
