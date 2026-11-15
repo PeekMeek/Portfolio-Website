@@ -18,11 +18,11 @@ h1,h2{margin:0;letter-spacing:-.02em;font-stretch:112%;font-weight:700;line-heig
 a{color:inherit}
 :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 .top{display:flex;justify-content:space-between;align-items:baseline;padding:18px clamp(16px,4vw,48px);border-bottom:1px solid var(--line)}
-.top a{text-decoration:none;font-family:Archivo,sans-serif;font-weight:700;font-stretch:112%}
+.top a{text-decoration:none;font-family:Archivo,sans-serif;font-weight:800;font-size:1.35rem;font-stretch:112%}
 main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
-.hero{max-width:760px;margin:24px 0 48px}
+.hero{max-width:760px;margin:24px auto 48px;text-align:center}
 .hero h1{font-size:clamp(2.4rem,6vw,4.4rem)}
-.hero p{color:var(--mute);margin:16px 0 0;max-width:52ch}
+.hero p{color:var(--mute);margin:16px auto 0;max-width:52ch}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
 .card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);text-decoration:none;overflow:hidden}
 .card:hover{border-color:var(--accent)}
@@ -50,9 +50,6 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .bar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:12px 0;font-size:.95rem}
 .bar label{cursor:pointer}
 .bar input[type=checkbox]{accent-color:var(--accent);margin-right:6px}
-.btn{margin-left:auto;border:1px solid var(--accent);color:var(--accent);padding:4px 12px;font-weight:600}
-.btn:hover{background:var(--accent);color:#121212}
-.btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
 .legend{display:flex;gap:14px;flex-wrap:wrap}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;background:var(--c)}
 .status{margin:0;color:var(--mute);min-height:1.5em}
@@ -71,7 +68,7 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 </style>
 </head>
 <body>
-<div class="top"><a href="#/" id="brand">Portfolio</a><span class="meta" id="tag"></span></div>
+<div class="top"><a href="#/" id="brand">Miko Parkinson</a><span class="meta" id="tag"></span></div>
 <main id="app"></main>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -223,8 +220,7 @@ function groups(p) {
 
 function home() {
   const s = DATA.site || {};
-  document.getElementById("brand").textContent = s.name || "Portfolio";
-  app.innerHTML = `<section class="hero"><h1>${esc(s.headline || "Engineering projects, version by version")}</h1><p>${esc(s.intro || "Open a project to step through its design history and see which parts changed.")}</p></section>
+  app.innerHTML = `<section class="hero"><h1>Miko’s Projects</h1><p>${esc(s.intro || "Open a project to step through its design history and see which parts changed.")}</p></section>
   <div class="grid">${DATA.projects.map(p => {
     const last = p.versions[p.versions.length - 1];
     const n = p.versions.length;
@@ -240,8 +236,7 @@ function windowHtml(g) {
   return `<section class="win" aria-label="${esc(g.name)}"><div class="work"><div>
     <div class="viewer"><b class="fname">${esc(g.name)}</b></div>
     <div class="bar"><label><input type="checkbox" class="chg" checked>Highlight changes from the previous version</label>
-    <span class="legend"></span>
-    <label class="btn">Open a STEP file<input type="file" class="file" accept=".step,.stp" hidden></label></div>
+    <span class="legend"></span></div>
     <p class="status"></p></div>
     <ol class="tl" aria-label="Versions of ${esc(g.name)}"></ol></div></section>`;
 }
@@ -257,12 +252,6 @@ function makeWindow(sec, g) {
     w.i = +b.dataset.i; timeline(w); show(w);
   };
   w.el.chk.onchange = e => { w.changes = e.target.checked; show(w, true); };
-  q(".file").onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    w.token++; w.el.status.textContent = "Reading " + f.name + "…";
-    try { render(w.view, await partsFromStep(new Uint8Array(await f.arrayBuffer()))); w.el.status.textContent = f.name + " (local preview only, not saved)."; }
-    catch (err) { w.el.status.textContent = err.message; }
-  };
   return w;
 }
 
@@ -286,7 +275,7 @@ function route() {
 
 fetch("data/projects.json").then(r => r.json()).then(d => {
   DATA = d;
-  document.title = (d.site?.name || "Engineering") + " | Portfolio";
+  document.title = "Miko Parkinson | Portfolio";
   addEventListener("hashchange", route);
   route();
 }).catch(() => {
