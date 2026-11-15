@@ -323,13 +323,6 @@
         {
           "id": "v1",
           "date": "2026-11-15",
-          "note": "Added USB cutouts for the Usb-C and Usb-A ports on the front of the PC",
-          "source": "V1_GPU_Test-7.stp",
-          "file": "projects/3d-printed-portable-pc/v1-gpu-test-7/v1.step"
-        },
-        {
-          "id": "v1",
-          "date": "2026-11-15",
           "note": "This is a new case design for a powerful, compact rig that has a small removable tray on the right for cables, dongles, controllers, etc.",
           "source": "V1_Assembly.stp",
           "file": "projects/3d-printed-portable-pc/v1-assembly/v1.step"
