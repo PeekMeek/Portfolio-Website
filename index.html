@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
 <title>Engineering Portfolio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
 <style>
-:root{--paper:#ECEFF3;--panel:#F8FAFC;--ink:#142235;--mute:#566679;--line:#c5ced8;--accent:#2347c5;--add:#2e9e5b;--mod:#e0a100;--rem:#d6453d}
+:root{color-scheme:dark;--paper:#121212;--panel:#1b1b1b;--well:#161616;--ink:#efe8e6;--mute:#a69e9c;--line:#2c2c2c;--accent:#f47068;--accent-deep:#c93b37;--add:#3fb97a;--mod:#e8b020;--rem:#ff938b}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.55 "Source Sans 3",system-ui,sans-serif}
 h1,h2,b{font-family:Archivo,system-ui,sans-serif}
@@ -22,13 +24,17 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .hero h1{font-size:clamp(2.4rem,6vw,4.4rem)}
 .hero p{color:var(--mute);margin:16px 0 0;max-width:52ch}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
-.card{display:flex;flex-direction:column;gap:12px;background:var(--panel);border:1px solid var(--line);padding:22px;text-decoration:none;min-height:230px}
+.card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);text-decoration:none;overflow:hidden}
 .card:hover{border-color:var(--accent)}
-.card h2{font-size:1.6rem}
+.thumb{aspect-ratio:16/10;background:var(--well);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb svg{width:34%;height:auto;stroke:var(--line);fill:none;stroke-width:2;stroke-linejoin:round}
+.cbody{display:flex;flex-direction:column;gap:12px;padding:20px 22px 22px;flex:1}
+.card h2{font-size:1.5rem}
 .card p{margin:0;color:var(--mute)}
 .ruler{display:flex;align-items:flex-end;gap:9px;height:22px;margin-top:auto}
-.ruler i{display:block;width:2px;height:12px;background:var(--line)}
-.ruler i:last-child{height:22px;background:var(--accent)}
+.ruler i{display:block;width:3px;height:12px;background:var(--c)}
+.ruler i:last-child{height:22px}
 .meta{font-size:.9rem;color:var(--mute)}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tags span{border:1px solid var(--line);padding:0 8px;font-size:.85rem;color:var(--mute)}
@@ -36,18 +42,20 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .phead{margin-bottom:24px;max-width:70ch}
 .phead h1{font-size:clamp(2rem,4.5vw,3.2rem)}
 .phead p{color:var(--mute);margin:10px 0 0}
+.win{margin-bottom:56px}
 .work{display:grid;grid-template-columns:1fr 330px;gap:28px;align-items:start}
-#viewer{height:min(68vh,640px);min-height:320px;border:1px solid var(--line);background-color:#F4F6F9;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:32px 32px;background-position:-1px -1px;cursor:grab;position:relative}
-#viewer canvas{display:block;width:100%;height:100%}
+.viewer{height:min(68vh,640px);min-height:320px;border:1px solid var(--line);background-color:var(--well);background-image:linear-gradient(#222 1px,transparent 1px),linear-gradient(90deg,#222 1px,transparent 1px);background-size:32px 32px;background-position:-1px -1px;cursor:grab;position:relative}
+.viewer canvas{display:block;width:100%;height:100%}
+.fname{position:absolute;left:12px;bottom:12px;z-index:2;max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 10px;background:rgba(18,18,18,.82);border:1px solid var(--line);font-weight:700;font-size:.95rem;pointer-events:none}
 .bar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:12px 0;font-size:.95rem}
 .bar label{cursor:pointer}
 .bar input[type=checkbox]{accent-color:var(--accent);margin-right:6px}
-.btn{margin-left:auto;border:1px solid var(--ink);padding:4px 12px;font-weight:600}
-.btn:hover{background:var(--ink);color:#fff}
+.btn{margin-left:auto;border:1px solid var(--accent);color:var(--accent);padding:4px 12px;font-weight:600}
+.btn:hover{background:var(--accent);color:#121212}
 .btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
 .legend{display:flex;gap:14px;flex-wrap:wrap}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;background:var(--c)}
-#status{margin:0;color:var(--mute);min-height:1.5em}
+.status{margin:0;color:var(--mute);min-height:1.5em}
 .tl{list-style:none;margin:0;padding:0 0 0 18px;border-left:2px solid var(--line);position:sticky;top:16px}
 .tl li{position:relative;margin-bottom:6px}
 .tl li::before{content:"";position:absolute;left:-24px;top:18px;width:10px;height:2px;background:var(--line)}
@@ -71,12 +79,15 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 <script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
 <script>
 const OCCT_BASE = "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/";
-const COLORS = {same: 0x9aa7b8, dim: 0xc9d1db, added: 0x2e9e5b, modified: 0xe0a100, removed: 0xd6453d};
+const COLORS = {same: 0xb9b4b2, dim: 0x4b4948, added: 0x3fb97a, modified: 0xe8b020, removed: 0xff938b};
+// Red gradient, light to dark. Version ticks on each card run dark (oldest) to light (latest).
+const GRADIENT = ["#FFDAD5", "#FFB8B0", "#FF938B", "#F47068", "#E5534B", "#C93B37", "#AD2E2B", "#922323", "#78191B", "#5D1012"];
+const tickColor = (i, n) => GRADIENT[n < 2 ? 3 : 7 - Math.round(i / (n - 1) * 4)];
+const PLACEHOLDER = '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6 56 19v26L32 58 8 45V19z"/><path d="M8 19l24 13 24-13M32 32v26"/></svg>';
 const app = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cache = new Map();
-let DATA, occt, view = null, token = 0;
-const state = {p: null, i: 0, changes: true};
+let DATA, occt, wins = [];
 
 async function getOcct() {
   if (!occt) occt = await occtimportjs({locateFile: f => OCCT_BASE + f});
@@ -116,8 +127,8 @@ async function loadParts(v) {
   return parts;
 }
 
-function initViewer() {
-  const el = document.getElementById("viewer");
+// Each model (STEP file name) gets its own viewer, so every window owns one of these.
+function createViewer(el) {
   const r = new THREE.WebGLRenderer({antialias: true, alpha: true});
   r.setPixelRatio(Math.min(devicePixelRatio, 2));
   el.appendChild(r.domElement);
@@ -140,19 +151,22 @@ function initViewer() {
   const ro = new ResizeObserver(size);
   ro.observe(el);
   size();
-  r.setAnimationLoop(() => { ctl.update(); r.render(scene, cam); });
-  view = {group, cam, ctl, dispose() { r.setAnimationLoop(null); ro.disconnect(); r.dispose(); }};
+  let visible = true;  // windows scrolled out of view stop drawing
+  const io = new IntersectionObserver(e => { visible = e[0].isIntersecting; });
+  io.observe(el);
+  r.setAnimationLoop(() => { if (visible) { ctl.update(); r.render(scene, cam); } });
+  return {group, cam, ctl, dispose() { r.setAnimationLoop(null); ro.disconnect(); io.disconnect(); r.dispose(); }};
 }
 
-function addPart(pt, color, ghost) {
+function addPart(view, pt, color, ghost) {
   const mat = new THREE.MeshStandardMaterial({color, metalness: 0.1, roughness: 0.6, side: THREE.DoubleSide,
     transparent: !!ghost, opacity: ghost ? 0.28 : 1, depthWrite: !ghost});
   view.group.add(new THREE.Mesh(pt.geo, mat));
   if (!ghost) view.group.add(new THREE.LineSegments(new THREE.EdgesGeometry(pt.geo, 30),
-    new THREE.LineBasicMaterial({color: 0x142235, transparent: true, opacity: 0.35})));
+    new THREE.LineBasicMaterial({color: 0x0c0c0c, transparent: true, opacity: 0.55})));
 }
 
-function frame() {
+function frame(view) {
   const box = new THREE.Box3().setFromObject(view.group);
   if (box.isEmpty()) return;
   const c = box.getCenter(new THREE.Vector3()), d = box.getSize(new THREE.Vector3()).length();
@@ -161,39 +175,50 @@ function frame() {
   view.ctl.target.copy(c);
 }
 
-function setStatus(t) { const s = document.getElementById("status"); if (s) s.textContent = t || ""; }
-
-function render(parts, {changes = {}, ghosts = [], highlight = false, keepCam = false} = {}) {
+function render(view, parts, {changes = {}, ghosts = [], highlight = false, keepCam = false} = {}) {
   view.group.clear();
-  parts.forEach(pt => addPart(pt, highlight ? COLORS[changes[pt.name]] ?? COLORS.dim : COLORS.same));
-  ghosts.forEach(pt => addPart(pt, COLORS.removed, true));
-  if (!keepCam) frame();
+  parts.forEach(pt => addPart(view, pt, highlight ? COLORS[changes[pt.name]] ?? COLORS.dim : COLORS.same));
+  ghosts.forEach(pt => addPart(view, pt, COLORS.removed, true));
+  if (!keepCam) frame(view);
 }
 
-async function show(keepCam) {
-  const p = state.p, v = p.versions[state.i], t = ++token;
-  const first = state.i === 0;
-  const chk = document.getElementById("chg");
-  chk.disabled = first;
-  const hl = state.changes && !first;
-  setStatus("Loading model…");
+async function show(w, keepCam) {
+  const v = w.vs[w.i], t = ++w.token;
+  const first = w.i === 0;
+  w.el.chk.disabled = first;
+  const hl = w.changes && !first;
+  w.el.status.textContent = "Loading model…";
   try {
     const parts = await loadParts(v);
     let ghosts = [];
-    if (hl && v.removed?.length) ghosts = (await loadParts(p.versions[state.i - 1])).filter(x => v.removed.includes(x.name));
-    if (t !== token) return;
-    render(parts, {changes: v.changes || {}, ghosts, highlight: hl, keepCam});
+    if (hl && v.removed?.length) ghosts = (await loadParts(w.vs[w.i - 1])).filter(x => v.removed.includes(x.name));
+    if (t !== w.token) return;
+    render(w.view, parts, {changes: v.changes || {}, ghosts, highlight: hl, keepCam});
     const n = k => Object.values(v.changes || {}).filter(x => x === k).length;
-    document.getElementById("legend").innerHTML = hl
+    w.el.legend.innerHTML = hl
       ? `<span style="--c:var(--add)">${n("added")} added</span><span style="--c:var(--mod)">${n("modified")} modified</span><span style="--c:var(--rem)">${(v.removed || []).length} removed</span>` : "";
-    setStatus(parts.length + (parts.length === 1 ? " part" : " parts") + ". Drag to rotate, scroll to zoom, right-drag to pan.");
-  } catch (e) { if (t === token) setStatus(e.message); }
+    w.el.status.textContent = parts.length + (parts.length === 1 ? " part" : " parts") + ". Drag to rotate, scroll to zoom, right-drag to pan.";
+  } catch (e) { if (t === w.token) w.el.status.textContent = e.message; }
 }
 
-function timeline() {
-  const p = state.p;
-  document.getElementById("tl").innerHTML = p.versions.map((v, i) =>
-    `<li class="${i === state.i ? "on" : ""}"><button data-i="${i}"${i === state.i ? ' aria-current="true"' : ""}><b>${esc(v.id || "v" + (i + 1))}</b><time>${esc(v.date)}</time><span>${esc(v.note)}</span></button></li>`).join("");
+function timeline(w) {
+  w.el.tl.innerHTML = w.vs.map((v, i) =>
+    `<li class="${i === w.i ? "on" : ""}"><button data-i="${i}"${i === w.i ? ' aria-current="true"' : ""}><b>${esc(v.id || "v" + (i + 1))}</b><time>${esc(v.date)}</time><span>${esc(v.note)}</span></button></li>`).join("");
+}
+
+// A model is identified by its STEP file name, ignoring case and the .step/.stp ending.
+const keyOf = s => String(s || "").replace(/\.[^.\\/]+$/, "").trim().toLowerCase();
+
+function groups(p) {
+  const m = new Map();
+  p.versions.forEach(v => {
+    const k = keyOf(v.source);
+    if (!m.has(k)) m.set(k, {name: v.source || p.title, versions: []});
+    const g = m.get(k);
+    g.versions.push(v);
+    if (v.source) g.name = v.source;  // show the most recent spelling of the file name
+  });
+  return [...m.values()];
 }
 
 function home() {
@@ -202,40 +227,57 @@ function home() {
   app.innerHTML = `<section class="hero"><h1>${esc(s.headline || "Engineering projects, version by version")}</h1><p>${esc(s.intro || "Open a project to step through its design history and see which parts changed.")}</p></section>
   <div class="grid">${DATA.projects.map(p => {
     const last = p.versions[p.versions.length - 1];
-    return `<a class="card" href="#/${esc(p.id)}"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p>
+    const n = p.versions.length;
+    const thumb = p.image ? `<img src="${esc(p.image)}" alt="${esc(p.title)} preview" loading="lazy">` : PLACEHOLDER;
+    return `<a class="card" href="#/${esc(p.id)}"><div class="thumb">${thumb}</div><div class="cbody"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p>
     <div class="tags">${(p.tags || []).map(t => `<span>${esc(t)}</span>`).join("")}</div>
-    <div class="ruler" aria-hidden="true">${p.versions.map(() => "<i></i>").join("")}</div>
-    <div class="meta">${p.versions.length} versions, latest ${esc(last.date)}</div></a>`;
+    <div class="ruler" aria-hidden="true">${p.versions.map((_, i) => `<i style="--c:${tickColor(i, n)}"></i>`).join("")}</div>
+    <div class="meta">Last updated: ${esc(last.date)}</div></div></a>`;
   }).join("")}</div>`;
 }
 
+function windowHtml(g) {
+  return `<section class="win" aria-label="${esc(g.name)}"><div class="work"><div>
+    <div class="viewer"><b class="fname">${esc(g.name)}</b></div>
+    <div class="bar"><label><input type="checkbox" class="chg" checked>Highlight changes from the previous version</label>
+    <span class="legend"></span>
+    <label class="btn">Open a STEP file<input type="file" class="file" accept=".step,.stp" hidden></label></div>
+    <p class="status"></p></div>
+    <ol class="tl" aria-label="Versions of ${esc(g.name)}"></ol></div></section>`;
+}
+
+function makeWindow(sec, g) {
+  const q = s => sec.querySelector(s);
+  const w = {vs: g.versions, i: g.versions.length - 1, changes: true, token: 0,
+    el: {chk: q(".chg"), legend: q(".legend"), status: q(".status"), tl: q(".tl")}};
+  w.view = createViewer(q(".viewer"));
+  timeline(w); show(w);
+  w.el.tl.onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    w.i = +b.dataset.i; timeline(w); show(w);
+  };
+  w.el.chk.onchange = e => { w.changes = e.target.checked; show(w, true); };
+  q(".file").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    w.token++; w.el.status.textContent = "Reading " + f.name + "…";
+    try { render(w.view, await partsFromStep(new Uint8Array(await f.arrayBuffer()))); w.el.status.textContent = f.name + " (local preview only, not saved)."; }
+    catch (err) { w.el.status.textContent = err.message; }
+  };
+  return w;
+}
+
 function project(p) {
-  state.p = p; state.i = p.versions.length - 1;
+  const gs = groups(p);
   app.innerHTML = `<a class="back" href="#/">All projects</a>
   <div class="phead"><h1>${esc(p.title)}</h1><p>${esc(p.summary)}</p></div>
-  <div class="work"><div><div id="viewer"></div>
-    <div class="bar"><label><input type="checkbox" id="chg" ${state.changes ? "checked" : ""}>Highlight changes from the previous version</label>
-    <span class="legend" id="legend"></span>
-    <label class="btn">Open a STEP file<input type="file" id="file" accept=".step,.stp" hidden></label></div>
-    <p id="status"></p></div>
-  <ol class="tl" id="tl" aria-label="Design timeline"></ol></div>`;
-  initViewer(); timeline(); show();
-  document.getElementById("tl").onclick = e => {
-    const b = e.target.closest("button"); if (!b) return;
-    state.i = +b.dataset.i; timeline(); show();
-  };
-  document.getElementById("chg").onchange = e => { state.changes = e.target.checked; show(true); };
-  document.getElementById("file").onchange = async e => {
-    const f = e.target.files[0]; if (!f) return;
-    token++; setStatus("Reading " + f.name + "…");
-    try { render(await partsFromStep(new Uint8Array(await f.arrayBuffer()))); setStatus(f.name + " (local preview only, not saved)."); }
-    catch (err) { setStatus(err.message); }
-  };
+  <div>${gs.map(windowHtml).join("")}</div>`;
+  const secs = app.querySelectorAll(".win");
+  wins = gs.map((g, k) => makeWindow(secs[k], g));
 }
 
 function route() {
-  token++;
-  if (view) { view.dispose(); view = null; }
+  wins.forEach(w => { w.token++; w.view.dispose(); });
+  wins = [];
   const id = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
   const p = DATA.projects.find(x => x.id === id);
   p ? project(p) : home();
