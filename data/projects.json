@@ -1,0 +1,286 @@
+{
+  "site": {
+    "name": "Your Name",
+    "headline": "Engineering projects, version by version",
+    "intro": "Open a project to step through its design history and see which parts changed."
+  },
+  "projects": [
+    {
+      "id": "camera-bracket",
+      "title": "Camera Mounting Bracket",
+      "summary": "A bracket for a small camera, reworked across three revisions to cut flex and add a bearing.",
+      "tags": [
+        "Bracket",
+        "3D printed"
+      ],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2026-09-02",
+          "note": "First draft: base plate, upright, and a plain pin.",
+          "demo": [
+            {
+              "name": "Base",
+              "type": "box",
+              "size": [
+                6,
+                0.6,
+                4
+              ],
+              "pos": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "Upright",
+              "type": "box",
+              "size": [
+                0.6,
+                4,
+                4
+              ],
+              "pos": [
+                -2.7,
+                2.3,
+                0
+              ]
+            },
+            {
+              "name": "Pin",
+              "type": "cyl",
+              "size": [
+                0.4,
+                3
+              ],
+              "pos": [
+                1,
+                1.8,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "id": "v2",
+          "date": "2026-10-04",
+          "note": "Thickened the upright and added a gusset after it flexed under load.",
+          "demo": [
+            {
+              "name": "Base",
+              "type": "box",
+              "size": [
+                6,
+                0.6,
+                4
+              ],
+              "pos": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "Upright",
+              "type": "box",
+              "size": [
+                0.9,
+                4,
+                4
+              ],
+              "pos": [
+                -2.55,
+                2.3,
+                0
+              ]
+            },
+            {
+              "name": "Gusset",
+              "type": "box",
+              "size": [
+                1.2,
+                1.2,
+                3
+              ],
+              "pos": [
+                -1.6,
+                1.2,
+                0
+              ]
+            },
+            {
+              "name": "Pin",
+              "type": "cyl",
+              "size": [
+                0.4,
+                3
+              ],
+              "pos": [
+                1,
+                1.8,
+                0
+              ]
+            }
+          ],
+          "changes": {
+            "Upright": "modified",
+            "Gusset": "added"
+          }
+        },
+        {
+          "id": "v3",
+          "date": "2026-11-09",
+          "note": "Replaced the pin with a bearing seat for smoother rotation.",
+          "demo": [
+            {
+              "name": "Base",
+              "type": "box",
+              "size": [
+                6,
+                0.6,
+                4
+              ],
+              "pos": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "Upright",
+              "type": "box",
+              "size": [
+                0.9,
+                4,
+                4
+              ],
+              "pos": [
+                -2.55,
+                2.3,
+                0
+              ]
+            },
+            {
+              "name": "Gusset",
+              "type": "box",
+              "size": [
+                1.2,
+                1.2,
+                3
+              ],
+              "pos": [
+                -1.6,
+                1.2,
+                0
+              ]
+            },
+            {
+              "name": "Bearing",
+              "type": "cyl",
+              "size": [
+                0.9,
+                0.8
+              ],
+              "pos": [
+                1,
+                0.7,
+                0
+              ]
+            }
+          ],
+          "changes": {
+            "Bearing": "added"
+          },
+          "removed": [
+            "Pin"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cable-guide",
+      "title": "Cable Guide Clip",
+      "summary": "A small clip that keeps cables tidy along a desk edge.",
+      "tags": [
+        "Clip",
+        "Prototype"
+      ],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2026-10-20",
+          "note": "Basic clip body.",
+          "demo": [
+            {
+              "name": "Body",
+              "type": "box",
+              "size": [
+                3,
+                1,
+                1.5
+              ],
+              "pos": [
+                0,
+                0,
+                0
+              ]
+            }
+          ]
+        },
+        {
+          "id": "v2",
+          "date": "2026-11-01",
+          "note": "Added a lip so cables stay in place.",
+          "demo": [
+            {
+              "name": "Body",
+              "type": "box",
+              "size": [
+                3,
+                1,
+                1.5
+              ],
+              "pos": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "name": "Lip",
+              "type": "box",
+              "size": [
+                3,
+                0.3,
+                0.4
+              ],
+              "pos": [
+                0,
+                0.65,
+                0.55
+              ]
+            }
+          ],
+          "changes": {
+            "Lip": "added"
+          }
+        }
+      ]
+    },
+    {
+      "id": "3d-printed-portable-pc",
+      "title": "3D Printed Portable PC",
+      "summary": "",
+      "tags": [],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2026-11-15",
+          "note": "I added a cable cover so that wires will not be seen from the side panel",
+          "file": "projects/3d-printed-portable-pc/v1.step"
+        }
+      ]
+    }
+  ]
+}

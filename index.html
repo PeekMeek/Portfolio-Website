@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Engineering Portfolio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#ECEFF3;--panel:#F8FAFC;--ink:#142235;--mute:#566679;--line:#c5ced8;--accent:#2347c5;--add:#2e9e5b;--mod:#e0a100;--rem:#d6453d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.55 "Source Sans 3",system-ui,sans-serif}
+h1,h2,b{font-family:Archivo,system-ui,sans-serif}
+h1,h2{margin:0;letter-spacing:-.02em;font-stretch:112%;font-weight:700;line-height:1.05}
+a{color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.top{display:flex;justify-content:space-between;align-items:baseline;padding:18px clamp(16px,4vw,48px);border-bottom:1px solid var(--line)}
+.top a{text-decoration:none;font-family:Archivo,sans-serif;font-weight:700;font-stretch:112%}
+main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
+.hero{max-width:760px;margin:24px 0 48px}
+.hero h1{font-size:clamp(2.4rem,6vw,4.4rem)}
+.hero p{color:var(--mute);margin:16px 0 0;max-width:52ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
+.card{display:flex;flex-direction:column;gap:12px;background:var(--panel);border:1px solid var(--line);padding:22px;text-decoration:none;min-height:230px}
+.card:hover{border-color:var(--accent)}
+.card h2{font-size:1.6rem}
+.card p{margin:0;color:var(--mute)}
+.ruler{display:flex;align-items:flex-end;gap:9px;height:22px;margin-top:auto}
+.ruler i{display:block;width:2px;height:12px;background:var(--line)}
+.ruler i:last-child{height:22px;background:var(--accent)}
+.meta{font-size:.9rem;color:var(--mute)}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tags span{border:1px solid var(--line);padding:0 8px;font-size:.85rem;color:var(--mute)}
+.back{display:inline-block;margin-bottom:18px;color:var(--mute)}
+.phead{margin-bottom:24px;max-width:70ch}
+.phead h1{font-size:clamp(2rem,4.5vw,3.2rem)}
+.phead p{color:var(--mute);margin:10px 0 0}
+.work{display:grid;grid-template-columns:1fr 330px;gap:28px;align-items:start}
+#viewer{height:min(68vh,640px);min-height:320px;border:1px solid var(--line);background-color:#F4F6F9;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:32px 32px;background-position:-1px -1px;cursor:grab;position:relative}
+#viewer canvas{display:block;width:100%;height:100%}
+.bar{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:12px 0;font-size:.95rem}
+.bar label{cursor:pointer}
+.bar input[type=checkbox]{accent-color:var(--accent);margin-right:6px}
+.btn{margin-left:auto;border:1px solid var(--ink);padding:4px 12px;font-weight:600}
+.btn:hover{background:var(--ink);color:#fff}
+.btn:focus-within{outline:3px solid var(--accent);outline-offset:2px}
+.legend{display:flex;gap:14px;flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;background:var(--c)}
+#status{margin:0;color:var(--mute);min-height:1.5em}
+.tl{list-style:none;margin:0;padding:0 0 0 18px;border-left:2px solid var(--line);position:sticky;top:16px}
+.tl li{position:relative;margin-bottom:6px}
+.tl li::before{content:"";position:absolute;left:-24px;top:18px;width:10px;height:2px;background:var(--line)}
+.tl li.on::before{background:var(--accent);width:16px;left:-30px;height:3px}
+.tl button{all:unset;box-sizing:border-box;display:block;width:100%;padding:10px 12px;cursor:pointer}
+.tl button:hover{background:var(--panel)}
+.tl button:focus-visible{outline:3px solid var(--accent)}
+.tl li.on button{background:var(--panel);box-shadow:inset 3px 0 var(--accent)}
+.tl b{font-size:1.1rem;margin-right:10px}
+.tl time{font-size:.85rem;color:var(--mute)}
+.tl span{display:block;margin-top:2px}
+@media (max-width:900px){.work{grid-template-columns:1fr}.tl{position:static}}
+</style>
+</head>
+<body>
+<div class="top"><a href="#/" id="brand">Portfolio</a><span class="meta" id="tag"></span></div>
+<main id="app"></main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
+<script>
+const OCCT_BASE = "https://cdn.jsdelivr.net/npm/occt-import-js@0.0.23/dist/";
+const COLORS = {same: 0x9aa7b8, dim: 0xc9d1db, added: 0x2e9e5b, modified: 0xe0a100, removed: 0xd6453d};
+const app = document.getElementById("app");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const cache = new Map();
+let DATA, occt, view = null, token = 0;
+const state = {p: null, i: 0, changes: true};
+
+async function getOcct() {
+  if (!occt) occt = await occtimportjs({locateFile: f => OCCT_BASE + f});
+  return occt;
+}
+
+function partsFromStep(buf) {
+  return getOcct().then(o => {
+    const r = o.ReadStepFile(buf, null);
+    if (!r.success) throw new Error("Could not read that STEP file.");
+    return r.meshes.map((m, i) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(m.attributes.position.array, 3));
+      g.setIndex(Array.from(m.index.array));
+      if (m.attributes.normal) g.setAttribute("normal", new THREE.Float32BufferAttribute(m.attributes.normal.array, 3));
+      else g.computeVertexNormals();
+      return {name: m.name || "Part " + (i + 1), geo: g};
+    });
+  });
+}
+
+async function loadParts(v) {
+  if (cache.has(v)) return cache.get(v);
+  let parts;
+  if (v.demo) {
+    parts = v.demo.map(d => {
+      const g = d.type === "cyl" ? new THREE.CylinderGeometry(d.size[0], d.size[0], d.size[1], 32) : new THREE.BoxGeometry(...d.size);
+      g.translate(...d.pos);
+      return {name: d.name, geo: g};
+    });
+  } else {
+    const res = await fetch(v.file);
+    if (!res.ok) throw new Error("Model file not found: " + v.file);
+    parts = await partsFromStep(new Uint8Array(await res.arrayBuffer()));
+  }
+  cache.set(v, parts);
+  return parts;
+}
+
+function initViewer() {
+  const el = document.getElementById("viewer");
+  const r = new THREE.WebGLRenderer({antialias: true, alpha: true});
+  r.setPixelRatio(Math.min(devicePixelRatio, 2));
+  el.appendChild(r.domElement);
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(40, 1, 0.1, 10000);
+  const ctl = new THREE.OrbitControls(cam, r.domElement);
+  ctl.enableDamping = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.95));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+  sun.position.set(5, 10, 7);
+  scene.add(sun);
+  const group = new THREE.Group();
+  scene.add(group);
+  const size = () => {
+    const w = el.clientWidth, h = el.clientHeight;
+    r.setSize(w, h);
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+  };
+  const ro = new ResizeObserver(size);
+  ro.observe(el);
+  size();
+  r.setAnimationLoop(() => { ctl.update(); r.render(scene, cam); });
+  view = {group, cam, ctl, dispose() { r.setAnimationLoop(null); ro.disconnect(); r.dispose(); }};
+}
+
+function addPart(pt, color, ghost) {
+  const mat = new THREE.MeshStandardMaterial({color, metalness: 0.1, roughness: 0.6, side: THREE.DoubleSide,
+    transparent: !!ghost, opacity: ghost ? 0.28 : 1, depthWrite: !ghost});
+  view.group.add(new THREE.Mesh(pt.geo, mat));
+  if (!ghost) view.group.add(new THREE.LineSegments(new THREE.EdgesGeometry(pt.geo, 30),
+    new THREE.LineBasicMaterial({color: 0x142235, transparent: true, opacity: 0.35})));
+}
+
+function frame() {
+  const box = new THREE.Box3().setFromObject(view.group);
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3()), d = box.getSize(new THREE.Vector3()).length();
+  view.cam.near = d / 100; view.cam.far = d * 100; view.cam.updateProjectionMatrix();
+  view.cam.position.copy(c).add(new THREE.Vector3(1, 0.8, 1).normalize().multiplyScalar(d * 1.4));
+  view.ctl.target.copy(c);
+}
+
+function setStatus(t) { const s = document.getElementById("status"); if (s) s.textContent = t || ""; }
+
+function render(parts, {changes = {}, ghosts = [], highlight = false, keepCam = false} = {}) {
+  view.group.clear();
+  parts.forEach(pt => addPart(pt, highlight ? COLORS[changes[pt.name]] ?? COLORS.dim : COLORS.same));
+  ghosts.forEach(pt => addPart(pt, COLORS.removed, true));
+  if (!keepCam) frame();
+}
+
+async function show(keepCam) {
+  const p = state.p, v = p.versions[state.i], t = ++token;
+  const first = state.i === 0;
+  const chk = document.getElementById("chg");
+  chk.disabled = first;
+  const hl = state.changes && !first;
+  setStatus("Loading model…");
+  try {
+    const parts = await loadParts(v);
+    let ghosts = [];
+    if (hl && v.removed?.length) ghosts = (await loadParts(p.versions[state.i - 1])).filter(x => v.removed.includes(x.name));
+    if (t !== token) return;
+    render(parts, {changes: v.changes || {}, ghosts, highlight: hl, keepCam});
+    const n = k => Object.values(v.changes || {}).filter(x => x === k).length;
+    document.getElementById("legend").innerHTML = hl
+      ? `<span style="--c:var(--add)">${n("added")} added</span><span style="--c:var(--mod)">${n("modified")} modified</span><span style="--c:var(--rem)">${(v.removed || []).length} removed</span>` : "";
+    setStatus(parts.length + (parts.length === 1 ? " part" : " parts") + ". Drag to rotate, scroll to zoom, right-drag to pan.");
+  } catch (e) { if (t === token) setStatus(e.message); }
+}
+
+function timeline() {
+  const p = state.p;
+  document.getElementById("tl").innerHTML = p.versions.map((v, i) =>
+    `<li class="${i === state.i ? "on" : ""}"><button data-i="${i}"${i === state.i ? ' aria-current="true"' : ""}><b>${esc(v.id || "v" + (i + 1))}</b><time>${esc(v.date)}</time><span>${esc(v.note)}</span></button></li>`).join("");
+}
+
+function home() {
+  const s = DATA.site || {};
+  document.getElementById("brand").textContent = s.name || "Portfolio";
+  app.innerHTML = `<section class="hero"><h1>${esc(s.headline || "Engineering projects, version by version")}</h1><p>${esc(s.intro || "Open a project to step through its design history and see which parts changed.")}</p></section>
+  <div class="grid">${DATA.projects.map(p => {
+    const last = p.versions[p.versions.length - 1];
+    return `<a class="card" href="#/${esc(p.id)}"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p>
+    <div class="tags">${(p.tags || []).map(t => `<span>${esc(t)}</span>`).join("")}</div>
+    <div class="ruler" aria-hidden="true">${p.versions.map(() => "<i></i>").join("")}</div>
+    <div class="meta">${p.versions.length} versions, latest ${esc(last.date)}</div></a>`;
+  }).join("")}</div>`;
+}
+
+function project(p) {
+  state.p = p; state.i = p.versions.length - 1;
+  app.innerHTML = `<a class="back" href="#/">All projects</a>
+  <div class="phead"><h1>${esc(p.title)}</h1><p>${esc(p.summary)}</p></div>
+  <div class="work"><div><div id="viewer"></div>
+    <div class="bar"><label><input type="checkbox" id="chg" ${state.changes ? "checked" : ""}>Highlight changes from the previous version</label>
+    <span class="legend" id="legend"></span>
+    <label class="btn">Open a STEP file<input type="file" id="file" accept=".step,.stp" hidden></label></div>
+    <p id="status"></p></div>
+  <ol class="tl" id="tl" aria-label="Design timeline"></ol></div>`;
+  initViewer(); timeline(); show();
+  document.getElementById("tl").onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state.i = +b.dataset.i; timeline(); show();
+  };
+  document.getElementById("chg").onchange = e => { state.changes = e.target.checked; show(true); };
+  document.getElementById("file").onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    token++; setStatus("Reading " + f.name + "…");
+    try { render(await partsFromStep(new Uint8Array(await f.arrayBuffer()))); setStatus(f.name + " (local preview only, not saved)."); }
+    catch (err) { setStatus(err.message); }
+  };
+}
+
+function route() {
+  token++;
+  if (view) { view.dispose(); view = null; }
+  const id = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
+  const p = DATA.projects.find(x => x.id === id);
+  p ? project(p) : home();
+  window.scrollTo(0, 0);
+}
+
+fetch("data/projects.json").then(r => r.json()).then(d => {
+  DATA = d;
+  document.title = (d.site?.name || "Engineering") + " | Portfolio";
+  addEventListener("hashchange", route);
+  route();
+}).catch(() => {
+  app.innerHTML = "<p>Could not load data/projects.json. Serve this folder over http (for example, run <code>python -m http.server</code> here) instead of opening the file directly.</p>";
+});
+</script>
+</body>
+</html>
