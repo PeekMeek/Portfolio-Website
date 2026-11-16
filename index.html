@@ -107,14 +107,45 @@ async function getOcct() {
   return occt;
 }
 
+// Fixed (absolute) mesh precision, so an unchanged face is triangulated the same way in
+// every version even when the overall model size changes. That makes faces comparable.
+const MESH_PARAMS = {linearUnit: "millimeter", linearDeflectionType: "absolute_value", linearDeflection: 0.1, angularDeflection: 0.5};
+
+// Area, centroid and (for flat faces) plane of one B-rep face's triangles.
+function faceStats(pos, idx, first, last) {
+  let A = 0, cx = 0, cy = 0, cz = 0, nx0 = 0, ny0 = 0, nz0 = 0, flat = true, ref = null;
+  for (let t = first; t <= last; t++) {
+    const a = idx[3 * t] * 3, b = idx[3 * t + 1] * 3, c = idx[3 * t + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (!len) continue;
+    const area = len / 2;
+    A += area;
+    cx += area * (pos[a] + pos[b] + pos[c]) / 3;
+    cy += area * (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3;
+    cz += area * (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3;
+    nx0 += nx; ny0 += ny; nz0 += nz;
+    if (!ref) ref = [nx / len, ny / len, nz / len];
+    else if (flat && ref[0] * nx / len + ref[1] * ny / len + ref[2] * nz / len < 0.9999) flat = false;
+  }
+  if (!A) return null;
+  const c = [cx / A, cy / A, cz / A];
+  const nl = Math.hypot(nx0, ny0, nz0) || 1, n = [nx0 / nl, ny0 / nl, nz0 / nl];
+  return {first, last, area: A, c, flat, n, d: n[0] * c[0] + n[1] * c[1] + n[2] * c[2]};
+}
+
 function partsFromStep(buf) {
   return getOcct().then(o => {
-    const r = o.ReadStepFile(buf, null);
+    const r = o.ReadStepFile(buf, MESH_PARAMS);
     if (!r.success) throw new Error("Could not read this STEP file.");
     return r.meshes.map((m, i) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(m.attributes.position.array, 3));
       g.setIndex(Array.from(m.index.array));
+      const pos = m.attributes.position.array, idx = m.index.array;
+      const stats = (m.brep_faces || []).map(f => faceStats(pos, idx, f.first, f.last));
       if (m.attributes.normal) g.setAttribute("normal", new THREE.Float32BufferAttribute(m.attributes.normal.array, 3));
       else g.computeVertexNormals();
       // Colors from the STEP file: one per part, and optionally per face.
@@ -129,7 +160,8 @@ function partsFromStep(buf) {
         };
         faces.forEach(f => g.addGroup(f.first * 3, (f.last - f.first + 1) * 3, slot(f.color)));
       }
-      return {name: m.name || "Part " + (i + 1), geo: g, color: m.color || null, faceColors};
+      return {name: m.name || "Part " + (i + 1), geo: g, color: m.color || null, faceColors,
+        faces: stats.every(Boolean) && stats.length ? stats : null};
     });
   });
 }
@@ -252,15 +284,93 @@ const rgb = c => new THREE.Color(...(c.some(x => x > 1) ? c.map(x => x / 255) : 
 
 // override: a single color for the whole part (change highlighting, removed ghosts).
 // null: use the colors saved in the STEP file, falling back to gray.
+const mkMat = (color, ghost) => new THREE.MeshStandardMaterial({color, metalness: 0.1, roughness: 0.6, side: THREE.DoubleSide,
+  transparent: !!ghost, opacity: ghost ? 0.28 : 1, depthWrite: !ghost});
+
+function addEdges(view, pt) {
+  pt.edges = pt.edges || new THREE.EdgesGeometry(pt.geo, 30);  // computed once per part
+  view.group.add(new THREE.LineSegments(pt.edges, new THREE.LineBasicMaterial({color: 0x0c0c0c, transparent: true, opacity: 0.55})));
+}
+
 function addPart(view, pt, override, ghost) {
-  const mk = color => new THREE.MeshStandardMaterial({color, metalness: 0.1, roughness: 0.6, side: THREE.DoubleSide,
-    transparent: !!ghost, opacity: ghost ? 0.28 : 1, depthWrite: !ghost});
   const own = c => c ? rgb(c) : pt.color ? rgb(pt.color) : COLORS.same;
   const faces = pt.faceColors || [];
-  const mat = override != null ? mk(override) : faces.length ? faces.map(c => mk(own(c))) : mk(own(null));
+  const mat = override != null ? mkMat(override, ghost) : faces.length ? faces.map(c => mkMat(own(c))) : mkMat(own(null));
   view.group.add(new THREE.Mesh(pt.geo, mat));
-  if (!ghost) view.group.add(new THREE.LineSegments(new THREE.EdgesGeometry(pt.geo, 30),
-    new THREE.LineBasicMaterial({color: 0x0c0c0c, transparent: true, opacity: 0.55})));
+  if (!ghost) addEdges(view, pt);
+}
+
+// A second view of a part's triangles, colored face by face. Shares the part's buffers.
+function faceGroups(pt, statusOf) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", pt.geo.getAttribute("position"));
+  if (pt.geo.getAttribute("normal")) g.setAttribute("normal", pt.geo.getAttribute("normal"));
+  g.setIndex(pt.geo.getIndex());
+  pt.faces.forEach((f, fi) => {
+    const s = statusOf(fi);
+    if (s >= 0) g.addGroup(f.first * 3, (f.last - f.first + 1) * 3, s);
+  });
+  return g;
+}
+
+// ---- Face-by-face comparison between two versions ----
+// Faces are matched by position and size, so a hole, chamfer or boss shows up as the
+// faces it added or changed. Flat faces that stayed in the same plane but changed
+// outline count as modified; anything else new counts as added.
+const SAME = 0, ADDED = 1, MODIFIED = 2;
+
+function faceDiff(oldParts, newParts) {
+  const pool = ps => ps.flatMap((p, pi) => p.faces.map((f, fi) => ({f, pi, fi})));
+  const O = pool(oldParts), N = pool(newParts);
+  const box = new THREE.Box3();
+  [...O, ...N].forEach(({f}) => box.expandByPoint(new THREE.Vector3(...f.c)));
+  const diag = box.getSize(new THREE.Vector3()).length() || 1;
+  const tol = diag * 2e-5, cell = diag * 1e-3;
+  const key = (c, dx = 0, dy = 0, dz = 0) => `${Math.round(c[0] / cell) + dx},${Math.round(c[1] / cell) + dy},${Math.round(c[2] / cell) + dz}`;
+  const grid = new Map();
+  O.forEach((o, k) => { const kk = key(o.f.c); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(k); });
+  const used = new Uint8Array(O.length);
+  const near = (a, b) => Math.hypot(a.c[0] - b.c[0], a.c[1] - b.c[1], a.c[2] - b.c[2]) <= tol &&
+    Math.abs(a.area - b.area) <= Math.max(a.area, b.area) * 1e-4 + tol * tol;
+  const status = newParts.map(p => new Int8Array(p.faces.length));
+  const unmatched = [];
+  N.forEach(n => {
+    let hit = -1;
+    for (let dx = -1; dx <= 1 && hit < 0; dx++) for (let dy = -1; dy <= 1 && hit < 0; dy++) for (let dz = -1; dz <= 1 && hit < 0; dz++)
+      for (const k of grid.get(key(n.f.c, dx, dy, dz)) || []) if (!used[k] && near(O[k].f, n.f)) { hit = k; break; }
+    if (hit >= 0) used[hit] = 1; else unmatched.push(n);
+  });
+  // A flat face still on the same plane as a vanished flat face was reshaped, not added.
+  const samePlane = (a, b) => a.flat && b.flat && a.n[0] * b.n[0] + a.n[1] * b.n[1] + a.n[2] * b.n[2] > 0.9999 && Math.abs(a.d - b.d) <= tol;
+  let added = 0, modified = 0;
+  unmatched.forEach(n => {
+    let best = -1, bestDist = Infinity;
+    O.forEach((o, k) => {
+      if (used[k] || !samePlane(o.f, n.f)) return;
+      const dist = Math.hypot(o.f.c[0] - n.f.c[0], o.f.c[1] - n.f.c[1], o.f.c[2] - n.f.c[2]);
+      if (dist < bestDist) { bestDist = dist; best = k; }
+    });
+    if (best >= 0) { used[best] = 1; status[n.pi][n.fi] = MODIFIED; modified++; }
+    else { status[n.pi][n.fi] = ADDED; added++; }
+  });
+  const removed = oldParts.map(p => new Uint8Array(p.faces.length));
+  let gone = 0;
+  O.forEach((o, k) => { if (!used[k]) { removed[o.pi][o.fi] = 1; gone++; } });
+  return {status, removed, added, modified, gone};
+}
+
+function renderFaceDiff(view, parts, prevParts, d, keepCam) {
+  view.group.clear();
+  const mats = [mkMat(COLORS.dim), mkMat(COLORS.added), mkMat(COLORS.modified)];
+  parts.forEach((pt, pi) => {
+    view.group.add(new THREE.Mesh(faceGroups(pt, fi => d.status[pi][fi]), mats));
+    addEdges(view, pt);
+  });
+  const ghost = [mkMat(COLORS.removed, true)];
+  prevParts.forEach((pt, pi) => {
+    if (d.removed[pi].some(Boolean)) view.group.add(new THREE.Mesh(faceGroups(pt, fi => d.removed[pi][fi] ? 0 : -1), ghost));
+  });
+  if (!keepCam) frame(view);
 }
 
 function frame(view) {
@@ -351,13 +461,25 @@ async function show(w, keepCam) {
   w.el.status.textContent = "Loading model…";
   try {
     const parts = await loadParts(v);
-    let ghosts = [];
-    if (hl && v.removed?.length) ghosts = (await loadParts(w.vs[w.i - 1])).filter(x => v.removed.includes(x.name));
+    const prev = hl ? await loadParts(w.vs[w.i - 1]) : null;
     if (t !== w.token) return;
-    render(w.view, parts, {changes: v.changes || {}, ghosts, highlight: hl, keepCam});
-    const n = k => Object.values(v.changes || {}).filter(x => x === k).length;
-    w.el.legend.innerHTML = hl
-      ? `<span style="--c:var(--add)">${n("added")} added</span><span style="--c:var(--mod)">${n("modified")} modified</span><span style="--c:var(--rem)">${(v.removed || []).length} removed</span>` : "";
+    const chips = (a, m, r, unit) => {
+      const u = n => n === 1 ? unit : unit + "s";
+      return `<span style="--c:var(--add)">${a} ${u(a)} added</span><span style="--c:var(--mod)">${m} ${u(m)} modified</span><span style="--c:var(--rem)">${r} ${u(r)} removed</span>`;
+    };
+    if (hl && parts.every(p => p.faces) && prev.every(p => p.faces)) {
+      // per feature: compare face by face (done once per version, then kept)
+      const d = v._diff || (v._diff = faceDiff(prev, parts));
+      renderFaceDiff(w.view, parts, prev, d, keepCam);
+      w.el.legend.innerHTML = d.added + d.modified + d.gone
+        ? chips(d.added, d.modified, d.gone, "face") : "No geometry changes";
+    } else {
+      // fallback (models without face data): whole parts, from the updater's part list
+      const ghosts = hl && v.removed?.length ? prev.filter(x => v.removed.includes(x.name)) : [];
+      render(w.view, parts, {changes: v.changes || {}, ghosts, highlight: hl, keepCam});
+      const n = k => Object.values(v.changes || {}).filter(x => x === k).length;
+      w.el.legend.innerHTML = hl ? chips(n("added"), n("modified"), (v.removed || []).length, "part") : "";
+    }
     w.el.status.textContent = parts.length + (parts.length === 1 ? " part" : " parts") + ". Drag to rotate, scroll to zoom, right-drag to pan.";
   } catch (e) { if (t === w.token) w.el.status.textContent = e.message; }
 }

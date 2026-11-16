@@ -69,15 +69,36 @@ def part_hashes(path):
         defs = up(forms, lambda t: t == "PRODUCT_DEFINITION")
         shapes = up(defs, lambda t: t == "PRODUCT_DEFINITION_SHAPE")
         links = up(shapes, lambda t: t == "SHAPE_DEFINITION_REPRESENTATION")
-        reps = [refs[s][1] for s in links if len(refs[s]) > 1 and refs[s][1] in ents]
+        reps = {refs[s][1] for s in links if len(refs[s]) > 1 and refs[s][1] in ents}
         if not reps:
             continue
+        # AP242 exports (Designcenter/NX included) often keep the solid in a separate
+        # representation linked by SHAPE_REPRESENTATION_RELATIONSHIP. Follow those links,
+        # but not placement links (WITH_TRANSFORMATION), which lead to child components.
+        todo = list(reps)
+        while todo:
+            r = todo.pop()
+            for u in users[r]:
+                if typ[u] != "SHAPE_REPRESENTATION_RELATIONSHIP" or "TRANSFORMATION" in ents[u]:
+                    continue
+                for o in refs[u]:
+                    if o in ents and o not in reps and "REPRESENTATION" in typ[o] and "RELATIONSHIP" not in typ[o]:
+                        reps.add(o)
+                        todo.append(o)
         digest = hashlib.sha1("".join(sorted(fp(r) for r in reps)).encode()).hexdigest()
         n, unique = 2, name
         while unique in out:
             unique = f"{name} ({n})"; n += 1
         out[unique] = digest
     return out
+
+
+HASH_FORMAT = 2  # bump when part_hashes changes, so old saved fingerprints are redone
+
+
+def write_parts(step_file, parts):
+    Path(step_file).with_suffix(".parts.json").write_text(
+        json.dumps({"format": HASH_FORMAT, "parts": parts}, indent=1), "utf-8")
 
 
 def saved_parts(root, version):
@@ -87,8 +108,38 @@ def saved_parts(root, version):
     f = Path(root) / version["file"]
     side = f.with_suffix(".parts.json")
     if side.exists():
-        return json.loads(side.read_text("utf-8"))
-    return part_hashes(f) if f.is_file() else None
+        try:
+            d = json.loads(side.read_text("utf-8"))
+            if d.get("format") == HASH_FORMAT:
+                return d["parts"]
+        except (ValueError, AttributeError, KeyError):
+            pass
+    if not f.is_file():
+        return None
+    parts = part_hashes(f)
+    write_parts(f, parts)  # refresh fingerprints saved by an older version of this app
+    return parts
+
+
+def recalc_changes(root, proj):
+    """Recompute added/modified/removed for every version from the saved STEP files.
+    Returns how many versions now show different changes."""
+    fixed = 0
+    for _, _, vs in windows_of(proj):
+        prev = None
+        for v in vs:
+            cur = saved_parts(root, v)
+            before = (v.get("changes"), v.get("removed"))
+            v.pop("changes", None)
+            v.pop("removed", None)
+            if prev is not None and cur:
+                v["changes"], removed = diff(prev, cur)
+                if removed:
+                    v["removed"] = removed
+            if (v.get("changes"), v.get("removed")) != before:
+                fixed += 1
+            prev = cur
+    return fixed
 
 
 def diff(old, new):
@@ -211,17 +262,15 @@ def add_version(root, proj, note, src, adopt=False):
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dest)
     new = part_hashes(dest)
-    dest.with_suffix(".parts.json").write_text(json.dumps(new, indent=1), "utf-8")
+    write_parts(dest, new)
     v = {"id": vid, "date": date.today().isoformat(), "note": note, "source": src.name, "file": rel}
     msg = f"{src.name} {vid}: {len(new)} parts found."
     if not group:
         msg += " New model, so it has its own window."
     if not new:
         msg += " No named parts were found, so no change highlighting."
-    elif group and "file" in group[-1]:
-        prev = root / group[-1]["file"]
-        side = prev.with_suffix(".parts.json")
-        old = json.loads(side.read_text("utf-8")) if side.exists() else (part_hashes(prev) if prev.exists() else None)
+    elif group:
+        old = saved_parts(root, group[-1])
         if old is not None:
             v["changes"], removed = diff(old, new)
             if removed:
@@ -417,7 +466,7 @@ class App:
             self.cfg = {}
         r = self.root = tk.Tk()
         r.title("Portfolio Updater")
-        r.geometry("600x460")
+        r.geometry("600x500")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
         self.v_watch = tk.StringVar(value=self.cfg.get("watch", ""))
         self.v_on = tk.BooleanVar(value=False)
@@ -435,9 +484,10 @@ class App:
         ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
         ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
         ttk.Button(f, text="Remove a window", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=5, column=2, sticky="ew", pady=(4, 0))
         self.out = tk.Text(f, height=12, state="disabled", wrap="word")
-        self.out.grid(row=5, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
-        f.rowconfigure(5, weight=1)
+        self.out.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
+        f.rowconfigure(6, weight=1)
         r.protocol("WM_DELETE_WINDOW", self.close)
         r.after(500, self.autostart)
 
@@ -617,6 +667,26 @@ class App:
             publish(root, message, lambda t: self.root.after(0, self.log, t))
         else:
             self.log("Not published: the portfolio folder is not a git repository.")
+
+    def recalc(self):
+        """Redo the change detection for every saved version (fixes versions saved
+        before part fingerprints read Designcenter's AP242 geometry correctly)."""
+        if not self.ready():
+            return
+        root = Path(self.v_root.get())
+        self.log("Recalculating changes for all projects...")
+        self.root.update_idletasks()
+        try:
+            data = load_data(root)
+            fixed = sum(recalc_changes(root, p) for p in data["projects"])
+            if fixed:
+                save_data(root, data)
+        except Exception as e:
+            return messagebox.showerror("Could not recalculate", str(e))
+        if not fixed:
+            return self.log("No differences: all saved changes were already correct.")
+        self.log(f"Updated the changes on {fixed} version(s).")
+        self.push(root, "Recalculate part changes")
 
     def manage(self):
         if self.ready():
