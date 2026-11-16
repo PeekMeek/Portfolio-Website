@@ -1,5 +1,8 @@
 {
- "V1_Assembly": "8f7de9b91c76f49a9afb7e97175a723163e39ec3",
- "USB-C Frontplug AliExpress_1": "67481485cbbad356b21a6940559d308f09291965",
- "USB Female_1": "3d67a3720325cc552e0e358b185b48505b1264fc"
+ "format": 2,
+ "parts": {
+  "V1_Assembly": "9b7121acb7b3efc29893a99cb7a7756cd84fcbf8",
+  "USB-C Frontplug AliExpress_1": "f4005d5cead6fdc972e590baf486b94b99026b5d",
+  "USB Female_1": "e35878663d114e7b4115f687721e4b1c56822788"
+ }
 }
