@@ -332,6 +332,16 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v6",
+          "date": "2026-11-15",
+          "note": "Moved the GPU power connector cutout to relieve potential strain on cable",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v6.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ]
     }
