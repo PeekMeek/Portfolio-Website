@@ -410,17 +410,23 @@ function groups(p) {
   return gs.sort((a, b) => b.assembly - a.assembly);
 }
 
+// When a project last changed: the newer of its folder's modified date and its latest version.
+const updated = p => [p.modified || "", ...p.versions.map(v => v.date || "")].sort().pop();
+const visible = () => DATA.projects.filter(p => !p.hidden);
+
 function home() {
   const s = DATA.site || {};
+  // newest first, so the most recently changed project sits top left
+  const list = visible().sort((a, b) => updated(b).localeCompare(updated(a)));
   app.innerHTML = `<section class="hero"><h1>Miko’s Projects</h1><p>${esc(s.intro || "Open a project to explore each design in 3D.")}</p></section>
-  <div class="grid">${DATA.projects.map(p => {
-    const last = p.versions[p.versions.length - 1];
+  <div class="grid">${list.map(p => {
     const n = p.versions.length;
+    const when = updated(p).slice(0, 10);
     const thumb = p.image ? `<img src="${esc(p.image)}" alt="${esc(p.title)} preview" loading="lazy">` : PLACEHOLDER;
-    return `<a class="card" href="#/${esc(p.id)}"><div class="thumb">${thumb}</div><div class="cbody"><h2>${esc(p.title)}</h2><p>${esc(p.summary)}</p>
-    <div class="tags">${(p.tags || []).map(t => `<span>${esc(t)}</span>`).join("")}</div>
-    <div class="ruler" aria-hidden="true">${p.versions.map((_, i) => `<i style="--c:${tickColor(i, n)}"></i>`).join("")}</div>
-    <div class="meta">Last updated: ${esc(last.date)}</div></div></a>`;
+    return `<a class="card" href="#/${esc(p.id)}"><div class="thumb">${thumb}</div><div class="cbody"><h2>${esc(p.title)}</h2>${p.summary ? `<p>${esc(p.summary)}</p>` : ""}
+    ${(p.tags || []).length ? `<div class="tags">${p.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+    ${n ? `<div class="ruler" aria-hidden="true">${p.versions.map((_, i) => `<i style="--c:${tickColor(i, n)}"></i>`).join("")}</div>` : ""}
+    ${when ? `<div class="meta"${n ? "" : ' style="margin-top:auto"'}>Last updated: ${esc(when)}</div>` : ""}</div></a>`;
   }).join("")}</div>`;
 }
 
@@ -507,7 +513,8 @@ function project(p) {
   const gs = groups(p);
   app.innerHTML = `<a class="back" href="#/">All projects</a>
   <div class="phead"><h1>${esc(p.title)}</h1>${p.summary ? `<p>${esc(p.summary)}</p>` : ""}</div>
-  <div class="wins">${gs.map(g => g.assembly ? assemblyHtml(g) : partHtml(g)).join("")}</div>`;
+  ${gs.length ? `<div class="wins">${gs.map(g => g.assembly ? assemblyHtml(g) : partHtml(g)).join("")}</div>`
+    : '<p class="meta">3D models for this project are on the way.</p>'}`;
   app.querySelectorAll(".win").forEach((sec, k) => gs[k].assembly ? makeAssembly(sec, gs[k]) : makePart(sec, gs[k]));
 }
 
@@ -515,7 +522,7 @@ function route() {
   wins.forEach(view => view.dispose());
   wins = [];
   const id = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
-  const p = DATA.projects.find(x => x.id === id);
+  const p = visible().find(x => x.id === id);
   p ? project(p) : home();
   window.scrollTo(0, 0);
 }

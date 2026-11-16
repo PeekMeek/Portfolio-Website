@@ -10,7 +10,7 @@ since the previous version, and updates data/projects.json.
 """
 import hashlib, json, os, re, shutil, subprocess, threading
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "portfolio_updater" / "config.json"
@@ -173,6 +173,120 @@ def set_cover(root, proj, src):
     shutil.copy2(src, dest)
     proj["image"] = f"projects/{proj['id']}/{dest.name}"
     return dest.stat().st_size
+
+
+# ---------- Projects folder scan ----------
+STEP_EXT = (".step", ".stp")
+MAX_STEP_BYTES = 95 * 1024 * 1024  # GitHub refuses files over 100 MB
+SKIP = (".", "$", "~")  # hidden, system and temporary folders/files
+
+
+def npath(p):
+    return str(p).replace("\\", "/").rstrip("/").lower()
+
+
+def iso(ts):
+    return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
+
+
+def project_folders(projects_dir):
+    return sorted((p for p in Path(projects_dir).iterdir() if p.is_dir() and not p.name.startswith(SKIP)),
+                  key=lambda p: p.name.lower())
+
+
+WEB_FOLDER = "website files"  # only files inside a folder with this name go on the site
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+
+def scan_folder(d):
+    """For project folder d: the newest modified time of anything inside it (the card's
+    date), plus the STEP files and pictures that sit inside a "Website Files" folder
+    (at any depth, subfolders included), oldest first. Everything else is ignored."""
+    newest, steps, images = Path(d).stat().st_mtime, [], []
+    for dirpath, dirnames, files in os.walk(d):
+        dirnames[:] = [x for x in dirnames if not x.startswith(SKIP)]
+        rel = Path(dirpath).relative_to(d).parts
+        for_web = any(part.lower() == WEB_FOLDER for part in rel)
+        for f in files:
+            if f.startswith(SKIP):
+                continue
+            fp = Path(dirpath, f)
+            try:
+                m = fp.stat().st_mtime
+            except OSError:
+                continue
+            newest = max(newest, m)
+            if for_web and fp.suffix.lower() in STEP_EXT:
+                steps.append((m, fp))
+            elif for_web and fp.suffix.lower() in IMAGE_EXT:
+                images.append((m, fp))
+    steps.sort()
+    images.sort()
+    return newest, steps, images
+
+
+def match_project(data, links, d):
+    """The site project that belongs to folder d, if any."""
+    nd = npath(d)
+    for p in data["projects"]:
+        if p.get("folder") and npath(p["folder"]) == nd:
+            return p
+    for path, title in links.items():  # a file from this folder was saved to a project
+        if npath(path).startswith(nd + "/"):
+            p = next((x for x in data["projects"] if x["title"] == title), None)
+            if p:
+                return p
+    return next((p for p in data["projects"] if p["title"].lower() == Path(d).name.lower()), None)
+
+
+def unique_id(data, title):
+    ids = {p["id"] for p in data["projects"]}
+    pid, n = slug(title), 2
+    while pid in ids:
+        pid = f"{slug(title)}-{n}"
+        n += 1
+    return pid
+
+
+def import_models(root, proj, steps, imported, log):
+    """Add the folder's STEP files that are new or changed since they were last imported.
+    Files with the same name in different subfolders (V1, V2...) become versions of one
+    window, in date order. Returns how many versions were added."""
+    n, base = 0, Path(proj.get("folder", ""))
+    for m, fp in steps:
+        k = npath(fp)
+        if imported.get(k, 0) >= m:
+            continue
+        try:
+            big = fp.stat().st_size > MAX_STEP_BYTES
+        except OSError:
+            continue
+        imported[k] = m
+        if big:
+            log(f"Skipped {fp.name}: it is over 95 MB, which GitHub won't accept.")
+            continue
+        try:
+            rel = fp.relative_to(base).as_posix()
+        except ValueError:
+            rel = fp.name
+        add_version(root, proj, f"Imported from {rel}", fp)
+        proj["versions"][-1]["date"] = iso(m)[:10]  # the file's own date, not today's
+        n += 1
+    return n
+
+
+def import_cover(root, proj, images, imported):
+    """Use the newest picture in Website Files as the card picture, unless a picture
+    was chosen by hand in the updater. Returns True if the picture changed."""
+    if not images or (proj.get("image") and not proj.get("image_from_folder")):
+        return False
+    m, fp = images[-1]
+    if imported.get(npath(fp), 0) >= m and proj.get("image"):
+        return False
+    imported[npath(fp)] = m
+    set_cover(root, proj, fp)
+    proj["image_from_folder"] = True
+    return True
 
 
 def slug(title):
@@ -409,10 +523,16 @@ class Manage(tk.Toplevel):
         self.title("Manage projects")
         self.resizable(False, False)
         pad = {"padx": 10, "pady": 4, "sticky": "w"}
-        ttk.Label(self, text="Project").grid(row=0, column=0, **pad)
-        self.proj = ttk.Combobox(self, state="readonly", width=45)
-        self.proj.grid(row=0, column=1, **pad)
+        ttk.Label(self, text="Project").grid(row=0, column=0, sticky="nw", padx=10, pady=4)
+        top = ttk.Frame(self)
+        top.grid(row=0, column=1, **pad)
+        self.proj = ttk.Combobox(top, state="readonly", width=45)
+        self.proj.pack(anchor="w")
         self.proj.bind("<<ComboboxSelected>>", lambda e: self.fill())
+        self.show = tk.BooleanVar(value=True)
+        self.show_box = ttk.Checkbutton(top, text="Show this project on the website", variable=self.show,
+                                        command=self.toggle_show)
+        self.show_box.pack(anchor="w", pady=(6, 0))
 
         ttk.Label(self, text="Project description").grid(row=1, column=0, sticky="nw", padx=10, pady=4)
         self.desc = tk.Text(self, width=50, height=4, wrap="word")
@@ -451,6 +571,15 @@ class Manage(tk.Toplevel):
         self.load()
         self.transient(app.root)
         self.grab_set()
+
+    def toggle_show(self):
+        p = self.project()
+        if not p:
+            return
+        def after():
+            if self.winfo_exists():
+                self.load()
+        self.app.set_visible(p["title"], self.show.get(), after)
 
     def add_tag(self):
         have = {t.lower() for t in self.tags.get(0, "end")}
@@ -510,6 +639,7 @@ class Manage(tk.Toplevel):
         self.desc.delete("1.0", "end")
         self.tags.delete(0, "end")
         self.tag_in.delete(0, "end")
+        self.show.set(bool(p) and not p.get("hidden"))
         if p:
             self.desc.insert("1.0", p.get("summary") or "")
             for t in p.get("tags") or []:
@@ -517,11 +647,15 @@ class Manage(tk.Toplevel):
         self.wins = windows_of(p) if p else []
         for label, _, vs in self.wins:
             self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
+        if p and not self.wins:
+            self.lb.insert("end", "(no 3D models yet)")
 
     def delete(self):
         sel = self.lb.curselection()
         if not sel:
             return messagebox.showinfo("Delete window", "Select a window first.", parent=self)
+        if sel[0] >= len(self.wins):
+            return
         label, key, vs = self.wins[sel[0]]
         p = self.project()
         msg = (f'Delete the "{label}" window and its {len(vs)} version(s)?\n\n'
@@ -542,28 +676,31 @@ class App:
             self.cfg = {}
         r = self.root = tk.Tk()
         r.title("Portfolio Updater")
-        r.geometry("600x500")
+        r.geometry("620x580")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
         self.v_watch = tk.StringVar(value=self.cfg.get("watch", ""))
+        self.v_projects = tk.StringVar(value=self.cfg.get("projects", ""))
         self.v_on = tk.BooleanVar(value=False)
         self.v_pub = tk.BooleanVar(value=self.cfg.get("publish", True))
-        self.seen, self.pending, self.baselined = {}, {}, False
+        self.seen, self.pending, self.baselined, self.busy = {}, {}, False, False
         f = ttk.Frame(r, padding=12)
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
-        for i, (label, var) in enumerate((("Portfolio folder", self.v_root), ("Watch folder", self.v_watch))):
+        for i, (label, var) in enumerate((("Portfolio folder", self.v_root), ("Watch folder", self.v_watch),
+                                          ("Projects folder", self.v_projects))):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
             ttk.Entry(f, textvariable=var).grid(row=i, column=1, sticky="ew", padx=6)
             ttk.Button(f, text="Browse", command=lambda v=var: self.browse(v)).grid(row=i, column=2)
-        ttk.Checkbutton(f, text="Watch for new exports", variable=self.v_on, command=self.toggle).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
-        ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=3, column=0, columnspan=2, sticky="w")
-        ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
-        ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
-        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
-        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=5, column=2, sticky="ew", pady=(4, 0))
+        ttk.Checkbutton(f, text="Watch for new exports", variable=self.v_on, command=self.toggle).grid(row=3, column=0, columnspan=2, sticky="w", pady=6)
+        ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=4, column=0, columnspan=2, sticky="w")
+        ttk.Button(f, text="Refresh", command=self.refresh).grid(row=3, column=2, sticky="ew")
+        ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=4, column=2, sticky="ew")
+        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=5, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=6, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Scan projects folder", command=self.scan).grid(row=7, column=2, sticky="ew", pady=(4, 0))
         self.out = tk.Text(f, height=12, state="disabled", wrap="word")
-        self.out.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
-        f.rowconfigure(6, weight=1)
+        self.out.grid(row=8, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
+        f.rowconfigure(8, weight=1)
         r.protocol("WM_DELETE_WINDOW", self.close)
         r.after(500, self.autostart)
 
@@ -602,6 +739,32 @@ class App:
         self.out.see("end")
         self.out.config(state="disabled")
 
+    def tlog(self, text):
+        """log() that is safe to call from a background thread."""
+        self.root.after(0, self.log, text)
+
+    def job(self, work, done):
+        """Run work() in the background (scans of network folders can be slow) and pass
+        its result to done() back on the window's thread."""
+        if self.busy:
+            return self.log("Still working on the last task. Try again when it finishes.")
+        self.busy = True
+        def run():
+            try:
+                res = (True, work())
+            except Exception as e:
+                res = (False, e)
+            self.root.after(0, self._finish, res, done)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _finish(self, res, done):
+        self.busy = False
+        ok, val = res
+        if not ok:
+            self.log(f"Failed: {val}")
+            return messagebox.showerror("Something went wrong", str(val))
+        done(val)
+
     def browse(self, var):
         d = filedialog.askdirectory(initialdir=var.get() or None)
         if d:
@@ -609,7 +772,7 @@ class App:
 
     def close(self):
         self.cfg.update(root=self.v_root.get(), watch=self.v_watch.get(), publish=self.v_pub.get(),
-                        auto=self.v_on.get())
+                        auto=self.v_on.get(), projects=self.v_projects.get())
         try:
             CONFIG.parent.mkdir(parents=True, exist_ok=True)
             CONFIG.write_text(json.dumps(self.cfg), "utf-8")
@@ -722,18 +885,18 @@ class App:
         try:
             data = load_data(root)
             if new:
-                ids = {p["id"] for p in data["projects"]}
-                pid, n = slug(new["Title"]), 2
-                while pid in ids:
-                    pid = f"{slug(new['Title'])}-{n}"; n += 1
-                proj = {"id": pid, "title": new["Title"], "summary": new["Summary"],
+                proj = {"id": unique_id(data, new["Title"]), "title": new["Title"], "summary": new["Summary"],
                         "tags": [t.strip() for t in new["Tags"].split(",") if t.strip()], "versions": []}
                 data["projects"].append(proj)
             else:
                 proj = next(p for p in data["projects"] if p["title"] == choice)
             msg = add_version(root, proj, note, path, adopt)
+            proj["modified"] = datetime.now().isoformat(timespec="seconds")  # moves its card to the front
+            if proj.get("hidden"):
+                msg += " (This project is hidden from the website. Show it in Manage projects.)"
             if picture:
                 size = set_cover(root, proj, picture)
+                proj.pop("image_from_folder", None)  # chosen by hand: scans won't replace it
                 msg += " Card picture saved." + (" It is large, which will slow the home page." if size > 1_500_000 else "")
             save_data(root, data)
         except Exception as e:
@@ -802,6 +965,116 @@ class App:
         self.push(root, f"{title}: removed {label}")
         return True
 
+    # ---- projects folder scan ----
+    def scan(self):
+        if not self.ready():
+            return
+        pdir = self.v_projects.get()
+        try:
+            ok = bool(pdir) and Path(pdir).is_dir()
+        except OSError:
+            ok = False
+        if not ok:
+            return messagebox.showwarning("Projects folder", "Choose your Projects folder first (for example //TOAST-ARCHIVES/Projects).")
+        root = Path(self.v_root.get())
+        self.log(f"Scanning {pdir} ... (network folders can take a minute)")
+        ignored = set(self.cfg.get("ignored_folders", []))
+        def work():
+            data, links, found = load_data(root), self.cfg.get("links", {}), []
+            for d in project_folders(pdir):
+                if npath(d) in ignored:  # cards you deleted stay deleted
+                    continue
+                newest, steps, images = scan_folder(d)
+                found.append((d, newest, steps, images, match_project(data, links, d)))
+            return found
+        self.job(work, self.scan_found)
+
+    def scan_found(self, found):
+        new = [d for d, _, _, _, p in found if p is None]
+        self.log(f"Found {len(found)} project folder(s): {len(new)} new, {len(found) - len(new)} already have a card.")
+        show = False
+        if new:
+            names = ", ".join(d.name for d in new[:15]) + (f", and {len(new) - 15} more" if len(new) > 15 else "")
+            ans = messagebox.askyesnocancel(
+                "New project folders",
+                f"Found {len(new)} folder(s) without a card: {names}.\n\n"
+                "Show their cards on the website right away?\n\n"
+                "Yes: the cards go live now, with the STEP files and pictures from each "
+                "folder's 'Website Files' folder.\n"
+                "No: the cards are created hidden. In Manage projects, tick 'Show this project on "
+                "the website' for the ones you want; their Website Files are added then.\n"
+                "Cancel: add nothing.")
+            if ans is None:
+                return self.log("Scan cancelled. Nothing was added.")
+            show = ans
+        root, links = Path(self.v_root.get()), self.cfg.get("links", {})
+        imported = self.cfg.setdefault("imported", {})
+        def work():
+            data = load_data(root)
+            made = models = dated = 0
+            for d, newest, steps, images, _ in found:
+                p = match_project(data, links, d)
+                if p is None:
+                    p = {"id": unique_id(data, d.name), "title": d.name, "summary": "", "tags": [],
+                         "versions": [], "folder": str(d), "imported": True}
+                    if not show:
+                        p["hidden"] = True
+                    data["projects"].append(p)
+                    made += 1
+                p.setdefault("folder", str(d))
+                m = iso(newest)
+                if m > (p.get("modified") or ""):
+                    p["modified"] = m
+                    dated += 1
+                # only folders the scan created get their files copied in, and only once shown
+                if p.get("imported") and not p.get("hidden"):
+                    n = import_models(root, p, steps, imported, self.tlog)
+                    if n:
+                        self.tlog(f"{p['title']}: added {n} model version(s).")
+                    if import_cover(root, p, images, imported):
+                        self.tlog(f"{p['title']}: card picture updated.")
+                        dated += 1
+                    models += n
+            if made or models or dated:
+                save_data(root, data)
+            return made, models, dated
+        self.log("Updating cards" + (" and copying STEP files..." if show else "..."))
+        def done(res):
+            made, models, dated = res
+            if not (made or models or dated):
+                return self.log("Scan finished: everything was already up to date.")
+            self.log(f"Scan finished: {made} new card(s)" + ("" if show or not made else " (hidden)")
+                     + f", {models} model version(s) added, {dated} card date or picture update(s).")
+            self.push(root, f"Scan projects folder: {made} new, {models} models")
+        self.job(work, done)
+
+    def set_visible(self, title, show, after=None):
+        """Show or hide a project's card. Showing a scanned project copies in its STEP files."""
+        root = Path(self.v_root.get())
+        imported = self.cfg.setdefault("imported", {})
+        def work():
+            data = load_data(root)
+            p = next(x for x in data["projects"] if x["title"] == title)
+            if show:
+                p.pop("hidden", None)
+            else:
+                p["hidden"] = True
+            n = 0
+            if show and p.get("imported") and p.get("folder") and Path(p["folder"]).is_dir():
+                _, steps, images = scan_folder(Path(p["folder"]))
+                n = import_models(root, p, steps, imported, self.tlog)
+                import_cover(root, p, images, imported)
+            save_data(root, data)
+            return n
+        self.log(f"Showing {title} on the website..." if show else f"Hiding {title} from the website...")
+        def done(n):
+            self.log((f"{title} is now on the website" + (f", with {n} model version(s) added." if n else "."))
+                     if show else f"{title} is now hidden from the website.")
+            self.push(root, f"{'Show' if show else 'Hide'} {title}")
+            if after:
+                after()
+        self.job(work, done)
+
     def set_details(self, title, text, tags):
         root = Path(self.v_root.get())
         try:
@@ -835,6 +1108,10 @@ class App:
             links.pop(path)
         if self.cfg.get("last") == title:
             self.cfg.pop("last")
+        if proj.get("folder"):  # so the next scan doesn't bring the card back
+            ignored = self.cfg.setdefault("ignored_folders", [])
+            if npath(proj["folder"]) not in ignored:
+                ignored.append(npath(proj["folder"]))
         self.log(f"Deleted the project {title}.")
         self.push(root, f"Delete project {title}")
         return True
