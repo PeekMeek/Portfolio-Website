@@ -402,27 +402,62 @@ class Prompt(tk.Toplevel):
 
 
 class Manage(tk.Toplevel):
-    """Pick a project and delete one of its windows."""
+    """Pick a project to edit its description, delete one of its windows, or delete it."""
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
-        self.title("Remove a window")
+        self.title("Manage projects")
         self.resizable(False, False)
         pad = {"padx": 10, "pady": 4, "sticky": "w"}
         ttk.Label(self, text="Project").grid(row=0, column=0, **pad)
         self.proj = ttk.Combobox(self, state="readonly", width=45)
         self.proj.grid(row=0, column=1, **pad)
         self.proj.bind("<<ComboboxSelected>>", lambda e: self.fill())
-        ttk.Label(self, text="Windows").grid(row=1, column=0, sticky="nw", padx=10, pady=4)
-        self.lb = tk.Listbox(self, width=52, height=8, exportselection=False)
-        self.lb.grid(row=1, column=1, **pad)
+
+        ttk.Label(self, text="Project description").grid(row=1, column=0, sticky="nw", padx=10, pady=4)
+        self.desc = tk.Text(self, width=50, height=4, wrap="word")
+        self.desc.grid(row=1, column=1, **pad)
+        ttk.Label(self, text="Shown under the project's title on its card and its page.",
+                  foreground="#666").grid(row=2, column=1, padx=10, sticky="w")
+        ttk.Button(self, text="Save description", command=self.save_desc).grid(row=3, column=1, padx=10, pady=(2, 6), sticky="e")
+
+        ttk.Separator(self).grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        ttk.Label(self, text="Windows").grid(row=5, column=0, sticky="nw", padx=10, pady=4)
+        self.lb = tk.Listbox(self, width=52, height=6, exportselection=False)
+        self.lb.grid(row=5, column=1, **pad)
+        ttk.Button(self, text="Delete window", command=self.delete).grid(row=6, column=1, padx=10, pady=(2, 6), sticky="e")
+
+        ttk.Separator(self).grid(row=7, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
         b = ttk.Frame(self)
-        b.grid(row=2, column=0, columnspan=2, pady=8)
-        ttk.Button(b, text="Delete window", command=self.delete).pack(side="left", padx=6)
-        ttk.Button(b, text="Close", command=self.destroy).pack(side="left")
+        b.grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        ttk.Button(b, text="Delete project", command=self.delete_project).pack(side="left")
+        ttk.Button(b, text="Close", command=self.destroy).pack(side="right")
         self.load()
         self.transient(app.root)
         self.grab_set()
+
+    def save_desc(self):
+        p = self.project()
+        if not p:
+            return
+        text = self.desc.get("1.0", "end").strip()
+        if text == (p.get("summary") or "").strip():
+            return self.app.log(f"No change to the description of {p['title']}.")
+        if self.app.set_description(p["title"], text):
+            self.load()
+
+    def delete_project(self):
+        p = self.project()
+        if not p:
+            return
+        n = len(p["versions"])
+        msg = (f'Delete the whole "{p["title"]}" project?\n\n'
+               f"Its card, all {len(self.wins)} window(s) and {n} version(s), and its card picture are "
+               "removed from the site and the portfolio folder. Your original exports are not "
+               "touched, and git history keeps a copy if you need it back.")
+        if messagebox.askyesno("Delete project", msg, icon="warning", default="no", parent=self):
+            if self.app.remove_project(p["title"]):
+                self.load()
 
     def load(self):
         self.data = self.app.data()
@@ -438,6 +473,9 @@ class Manage(tk.Toplevel):
     def fill(self):
         self.lb.delete(0, "end")
         p = self.project()
+        self.desc.delete("1.0", "end")
+        if p:
+            self.desc.insert("1.0", p.get("summary") or "")
         self.wins = windows_of(p) if p else []
         for label, _, vs in self.wins:
             self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
@@ -445,7 +483,7 @@ class Manage(tk.Toplevel):
     def delete(self):
         sel = self.lb.curselection()
         if not sel:
-            return messagebox.showinfo("Remove a window", "Select a window first.", parent=self)
+            return messagebox.showinfo("Delete window", "Select a window first.", parent=self)
         label, key, vs = self.wins[sel[0]]
         p = self.project()
         msg = (f'Delete the "{label}" window and its {len(vs)} version(s)?\n\n'
@@ -483,7 +521,7 @@ class App:
         ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=3, column=0, columnspan=2, sticky="w")
         ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
         ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
-        ttk.Button(f, text="Remove a window", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
         ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=5, column=2, sticky="ew", pady=(4, 0))
         self.out = tk.Text(f, height=12, state="disabled", wrap="word")
         self.out.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
@@ -724,6 +762,42 @@ class App:
         self.log(f'Deleted the "{label}" window from {title} ({n} version(s)).'
                  + (" The project had no windows left, so it was removed." if emptied else ""))
         self.push(root, f"{title}: removed {label}")
+        return True
+
+    def set_description(self, title, text):
+        root = Path(self.v_root.get())
+        try:
+            data = load_data(root)
+            proj = next(p for p in data["projects"] if p["title"] == title)
+            proj["summary"] = text
+            save_data(root, data)
+        except Exception as e:
+            messagebox.showerror("Could not save", str(e))
+            return False
+        self.log(f"Saved the description of {title}.")
+        self.push(root, f"{title}: update description")
+        return True
+
+    def remove_project(self, title):
+        root = Path(self.v_root.get())
+        try:
+            data = load_data(root)
+            proj = next(p for p in data["projects"] if p["title"] == title)
+            data["projects"].remove(proj)
+            d = root / "projects" / proj["id"]
+            if proj.get("id") and d.is_dir() and inside(root, d):
+                shutil.rmtree(d, ignore_errors=True)
+            save_data(root, data)
+        except Exception as e:
+            messagebox.showerror("Could not delete", str(e))
+            return False
+        links = self.cfg.get("links", {})
+        for path in [k for k, t in links.items() if t == title]:
+            links.pop(path)
+        if self.cfg.get("last") == title:
+            self.cfg.pop("last")
+        self.log(f"Deleted the project {title}.")
+        self.push(root, f"Delete project {title}")
         return True
 
 
