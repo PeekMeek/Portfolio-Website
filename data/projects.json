@@ -155,10 +155,20 @@
           "note": "This is the preliminary design for the removable box on the PC case. Unfortunately due to the dimensions, a standard Xbox controller is too large to fit inside, but I can make a spot for cables and a mouse.",
           "source": "V1_Snap_Box.stp",
           "file": "projects/3d-printed-portable-pc/v1-snap-box/v1.step"
+        },
+        {
+          "id": "v9",
+          "date": "2026-11-16",
+          "note": "Added dovetails and split the body into four sections for printing. Also moved the back magnet clip back 3mm to align with the IO being pushed back in an earlier revision.",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v9.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-16T11:53:23",
+      "modified": "2026-11-16T14:19:15",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
