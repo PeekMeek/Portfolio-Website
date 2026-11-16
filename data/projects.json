@@ -302,6 +302,16 @@
           "source": "V1_Case_Base.stp",
           "file": "projects/3d-printed-portable-pc/v1-case-base/v2.step",
           "changes": {}
+        },
+        {
+          "id": "v3",
+          "date": "2026-11-15",
+          "note": "Moved the back wall 3mm due to interference with the motherboard IO shield",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v3.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ]
     }
