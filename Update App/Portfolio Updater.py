@@ -1,14 +1,15 @@
 """Portfolio Updater: adds a new model version to your portfolio site.
 
 Run with Windows Python 3 (tkinter is included). No extra packages needed.
-1. Set the portfolio folder (the one containing index.html) and, optionally,
-   the folder your CAD program exports STEP files to.
-2. Tick "Watch for new exports", or use "Add a version manually".
-3. When a STEP file appears, answer "What did you change?" and save.
+1. Set the portfolio folder (the one containing index.html) and your Projects
+   folder (one subfolder per project).
+2. Only files inside a project's "Website Files" folder are used for the site.
+   Tick "Watch Website Files folders for new exports", or use "Add a version manually".
+3. When a STEP file appears there, answer "What did you change?" and save.
 The app copies the file into projects/<project>/, detects which parts changed
 since the previous version, and updates data/projects.json.
 """
-import hashlib, json, os, re, shutil, subprocess, threading
+import hashlib, json, os, re, shutil, subprocess, threading, time
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
@@ -225,6 +226,32 @@ def scan_folder(d):
     return newest, steps, images
 
 
+def find_web_dirs(projects_dir):
+    """Every "Website Files" folder inside the project folders: [(project folder, web folder)]."""
+    out = []
+    for d in project_folders(projects_dir):
+        for dirpath, dirnames, _ in os.walk(d):
+            keep = []
+            for x in dirnames:
+                if x.startswith(SKIP):
+                    continue
+                if x.lower() == WEB_FOLDER:
+                    out.append((d, Path(dirpath, x)))  # its subfolders are watched with it
+                else:
+                    keep.append(x)
+            dirnames[:] = keep
+    return out
+
+
+def web_steps(web_dir):
+    """STEP files inside one Website Files folder, subfolders included."""
+    found = []
+    for dirpath, dirnames, files in os.walk(web_dir):
+        dirnames[:] = [x for x in dirnames if not x.startswith(SKIP)]
+        found += [Path(dirpath, f) for f in files if not f.startswith(SKIP) and Path(f).suffix.lower() in STEP_EXT]
+    return found
+
+
 def match_project(data, links, d):
     """The site project that belongs to folder d, if any."""
     nd = npath(d)
@@ -424,9 +451,9 @@ from tkinter import filedialog, messagebox, ttk
 
 
 class Prompt(tk.Toplevel):
-    def __init__(self, app, path, project=None):
+    def __init__(self, app, path, project=None, folder=None):
         super().__init__(app.root)
-        self.app, self.path = app, path
+        self.app, self.path, self.folder = app, path, folder
         self.title("What did you change?")
         self.resizable(False, False)
         pad = {"padx": 10, "pady": 4, "sticky": "w"}
@@ -434,8 +461,9 @@ class Prompt(tk.Toplevel):
         names = [p["title"] for p in app.data()["projects"]]
         ttk.Label(self, text="Project").grid(row=1, column=0, **pad)
         self.proj = ttk.Combobox(self, values=names + [NEW], state="readonly", width=38)
-        last = project or app.cfg.get("last")
-        self.proj.set(last if last in names else (names[0] if names else NEW))
+        # From a project folder with no card yet: start a new project named after the folder.
+        last = project or (None if folder else app.cfg.get("last"))
+        self.proj.set(last if last in names else (NEW if folder or not names else names[0]))
         self.proj.grid(row=1, column=1, **pad)
         self.proj.bind("<<ComboboxSelected>>", lambda e: self.refresh())
         self.f = {}
@@ -443,6 +471,8 @@ class Prompt(tk.Toplevel):
             ttk.Label(self, text=k + (" (comma separated)" if k == "Tags" else "")).grid(row=2 + i, column=0, **pad)
             self.f[k] = ttk.Entry(self, width=41)
             self.f[k].grid(row=2 + i, column=1, **pad)
+        if folder and self.proj.get() == NEW:
+            self.f["Title"].insert(0, Path(folder).name)
         ttk.Label(self, text="Card picture (optional)").grid(row=5, column=0, **pad)
         pf = ttk.Frame(self)
         pf.grid(row=5, column=1, **pad)
@@ -511,7 +541,7 @@ class Prompt(tk.Toplevel):
             return messagebox.showwarning("Missing title", "Give the new project a title.", parent=self)
         fields = {k: e.get().strip() for k, e in self.f.items()} if new else None
         adopt = self.can_adopt() and self.adopt.get()
-        if self.app.save(self.path, self.proj.get(), note, fields, self.pic.get(), adopt):
+        if self.app.save(self.path, self.proj.get(), note, fields, self.pic.get(), adopt, self.folder):
             self.destroy()
 
 
@@ -678,29 +708,29 @@ class App:
         r.title("Portfolio Updater")
         r.geometry("620x580")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
-        self.v_watch = tk.StringVar(value=self.cfg.get("watch", ""))
         self.v_projects = tk.StringVar(value=self.cfg.get("projects", ""))
         self.v_on = tk.BooleanVar(value=False)
         self.v_pub = tk.BooleanVar(value=self.cfg.get("publish", True))
         self.seen, self.pending, self.baselined, self.busy = {}, {}, False, False
+        self.web_dirs, self.watch_from, self.gen = [], 0.0, 0
         f = ttk.Frame(r, padding=12)
         f.pack(fill="both", expand=True)
         f.columnconfigure(1, weight=1)
-        for i, (label, var) in enumerate((("Portfolio folder", self.v_root), ("Watch folder", self.v_watch),
-                                          ("Projects folder", self.v_projects))):
+        for i, (label, var) in enumerate((("Portfolio folder", self.v_root), ("Projects folder", self.v_projects))):
             ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
             ttk.Entry(f, textvariable=var).grid(row=i, column=1, sticky="ew", padx=6)
             ttk.Button(f, text="Browse", command=lambda v=var: self.browse(v)).grid(row=i, column=2)
-        ttk.Checkbutton(f, text="Watch for new exports", variable=self.v_on, command=self.toggle).grid(row=3, column=0, columnspan=2, sticky="w", pady=6)
-        ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=4, column=0, columnspan=2, sticky="w")
-        ttk.Button(f, text="Refresh", command=self.refresh).grid(row=3, column=2, sticky="ew")
-        ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=4, column=2, sticky="ew")
-        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=5, column=2, sticky="ew", pady=(4, 0))
-        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=6, column=2, sticky="ew", pady=(4, 0))
-        ttk.Button(f, text="Scan projects folder", command=self.scan).grid(row=7, column=2, sticky="ew", pady=(4, 0))
+        ttk.Checkbutton(f, text="Watch Website Files folders for new exports", variable=self.v_on,
+                        command=self.toggle).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
+        ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=3, column=0, columnspan=2, sticky="w")
+        ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
+        ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
+        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=5, column=2, sticky="ew", pady=(4, 0))
+        ttk.Button(f, text="Scan projects folder", command=self.scan).grid(row=6, column=2, sticky="ew", pady=(4, 0))
         self.out = tk.Text(f, height=12, state="disabled", wrap="word")
-        self.out.grid(row=8, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
-        f.rowconfigure(8, weight=1)
+        self.out.grid(row=7, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
+        f.rowconfigure(7, weight=1)
         r.protocol("WM_DELETE_WINDOW", self.close)
         r.after(500, self.autostart)
 
@@ -708,17 +738,13 @@ class App:
         """Begin watching on launch if it was on last time (on by default)."""
         if not self.cfg.get("auto", True):
             return
-        if not (Path(self.v_root.get()) / "index.html").exists():
-            return self.log("Set the portfolio folder and watch folder, then tick 'Watch for new exports'.")
-        try:
-            ok = Path(self.v_watch.get()).is_dir()
-        except OSError:
-            ok = False
-        if not ok:
+        if not (Path(self.v_root.get()) / "index.html").exists() or not self.v_projects.get():
+            return self.log("Set the portfolio folder and Projects folder, then tick 'Watch Website Files folders'.")
+        if not self.projects_ok():
             # At sign-in the network drive often connects a little after the app starts,
             # so keep trying every 30 seconds instead of giving up.
             if not getattr(self, "waiting", False):
-                self.log("Watch folder not available yet (is the network drive connected?). "
+                self.log("Projects folder not available yet (is the network drive connected?). "
                          "Retrying every 30 seconds.")
                 self.waiting = True
             if not self.v_on.get():
@@ -771,7 +797,8 @@ class App:
             var.set(d)
 
     def close(self):
-        self.cfg.update(root=self.v_root.get(), watch=self.v_watch.get(), publish=self.v_pub.get(),
+        self.cfg.pop("watch", None)  # replaced by the Projects folder
+        self.cfg.update(root=self.v_root.get(), publish=self.v_pub.get(),
                         auto=self.v_on.get(), projects=self.v_projects.get())
         try:
             CONFIG.parent.mkdir(parents=True, exist_ok=True)
@@ -789,16 +816,50 @@ class App:
             return False
         return True
 
+    def projects_ok(self):
+        try:
+            return bool(self.v_projects.get()) and Path(self.v_projects.get()).is_dir()
+        except OSError:
+            return False
+
     def toggle(self):
+        self.gen += 1  # stops any earlier watch loop
         if not self.v_on.get():
             return self.log("Stopped watching.")
-        if not Path(self.v_watch.get()).is_dir() or not self.ready():
+        if not self.ready() or not self.projects_ok():
             self.v_on.set(False)
-            return messagebox.showwarning("Watch folder", "Choose an existing watch folder first.")
-        self.seen = {p: self.sig(p) for p in self.steps()}  # existing files don't trigger the prompt
-        self.pending, self.baselined = {}, True
-        self.log("Watching " + self.v_watch.get())
-        self.poll()
+            return messagebox.showwarning("Projects folder", "Choose your Projects folder first (for example //TOAST-ARCHIVES/Projects).")
+        # Only exports made from now on open the prompt; files already there are left alone.
+        self.watch_from = time.time() - 5
+        self.seen, self.pending, self.baselined = {}, {}, True
+        self.log("Looking for Website Files folders in " + self.v_projects.get() + " ...")
+        self.find_dirs(self.gen, start=True)
+
+    def find_dirs(self, gen, start=False):
+        """Find the Website Files folders in the background, then (re)start polling.
+        Repeats every 10 minutes so newly created Website Files folders are picked up."""
+        if gen != self.gen:
+            return
+        pdir = self.v_projects.get()
+        def run():
+            try:
+                dirs, err = find_web_dirs(pdir), None
+            except OSError as e:
+                dirs, err = None, e
+            self.root.after(0, found, dirs, err)
+        def found(dirs, err):
+            if gen != self.gen:
+                return
+            if dirs is None:
+                self.log(f"Could not read the Projects folder: {err}")
+            else:
+                if start or len(dirs) != len(self.web_dirs):
+                    self.log(f"Watching {len(dirs)} Website Files folder(s).")
+                self.web_dirs = dirs
+            if start:
+                self.poll(gen)
+            self.root.after(600000, self.find_dirs, gen)
+        threading.Thread(target=run, daemon=True).start()
 
     @staticmethod
     def sig(p):
@@ -806,44 +867,74 @@ class App:
         return (s.st_mtime, s.st_size)
 
     def steps(self):
-        return [p for p in Path(self.v_watch.get()).iterdir() if p.suffix.lower() in (".step", ".stp")]
+        """(STEP file, its project folder) for every file in the Website Files folders."""
+        out = []
+        for proj_dir, web in self.web_dirs:
+            try:
+                out += [(p, proj_dir) for p in web_steps(web)]
+            except OSError:
+                pass  # a folder that was moved or deleted
+        return out
 
-    def poll(self):
-        if not self.v_on.get():
+    def target(self, proj_dir):
+        """The project title for a project folder, or None if it has no card yet."""
+        p = match_project(self.data(), self.cfg.get("links", {}), proj_dir)
+        return p["title"] if p else None
+
+    def poll(self, gen):
+        if gen != self.gen or not self.v_on.get():
             return
         try:
-            for p in self.steps():
+            for p, proj_dir in self.steps():
                 s = self.sig(p)
                 if self.seen.get(p) == s:
+                    continue
+                if p not in self.seen and p not in self.pending and s[0] < self.watch_from:
+                    self.seen[p] = s  # was already there before watching started
                     continue
                 if self.pending.get(p) == s:  # unchanged for one poll: export has finished
                     self.seen[p] = s
                     self.pending.pop(p)
                     self.root.deiconify(); self.root.lift()
-                    Prompt(self, p)
+                    Prompt(self, p, self.target(proj_dir), proj_dir)
                 else:
                     self.pending[p] = s
         except OSError as e:
             self.log(f"Watch error: {e}")
-        self.root.after(2000, self.poll)
+        self.root.after(3000, self.poll, gen)
 
     def refresh(self):
-        """Recheck the watch folder now. Files already saved to a project are
-        compared part by part with that project's latest version, so changes
-        made while the app was closed are caught too."""
+        """Recheck every Website Files folder now. Files that are already on a project
+        are compared part by part with that window's latest version, so changes made
+        while the app was closed are caught too."""
+        if not self.ready():
+            return
+        if not self.projects_ok():
+            return self.log("Refresh failed: the Projects folder is not available (is the network drive connected?).")
+        self.log("Refresh: looking through the Website Files folders...")
+        pdir = self.v_projects.get()
+        def work():
+            dirs = find_web_dirs(pdir)
+            files = []
+            for proj_dir, web in dirs:
+                files += [(p, proj_dir) for p in web_steps(web)]
+            return dirs, files
+        def done(res):
+            self.web_dirs, files = res
+            self.refresh_files(files)
+        self.job(work, done)
+
+    def refresh_files(self, files):
         root = Path(self.v_root.get())
-        if not (root / "index.html").exists():
-            return messagebox.showwarning("Portfolio folder", "Choose the portfolio folder (the one containing index.html).")
-        try:
-            files = self.steps()
-        except OSError:
-            return self.log("Refresh failed: the watch folder is not available (is the network drive connected?).")
         self.log(f"Checking {len(files)} STEP file(s)...")
         self.root.update_idletasks()
         data, links, found, skipped = self.data(), self.cfg.get("links", {}), 0, 0
-        for p in files:
+        for p, proj_dir in files:
             s = self.sig(p)
-            proj = next((x for x in data["projects"] if x["title"] == links.get(str(p))), None)
+            proj = (next((x for x in data["projects"] if x["title"] == links.get(str(p))), None)
+                    or match_project(data, links, proj_dir))
+            if proj and proj.get("hidden"):
+                continue  # hidden projects are left alone
             lv = latest_for(proj, p.name) if proj else None  # latest version of this file's own window
             if lv:
                 try:
@@ -867,9 +958,9 @@ class App:
             found += 1
             self.seen[p] = s
             self.root.deiconify(); self.root.lift()
-            Prompt(self, p, proj["title"] if proj else None)
+            Prompt(self, p, proj["title"] if proj else None, proj_dir)
         if skipped:
-            self.log(f"{skipped} other STEP file(s) skipped. Tick 'Watch for new exports' to detect new files.")
+            self.log(f"{skipped} other STEP file(s) skipped. Use 'Scan projects folder' to add files that aren't on the site yet.")
         if not found:
             self.log("Refresh: no part changes found.")
 
@@ -880,7 +971,7 @@ class App:
         if f:
             Prompt(self, Path(f))
 
-    def save(self, path, choice, note, new, picture="", adopt=False):
+    def save(self, path, choice, note, new, picture="", adopt=False, folder=None):
         root = Path(self.v_root.get())
         try:
             data = load_data(root)
@@ -890,6 +981,12 @@ class App:
                 data["projects"].append(proj)
             else:
                 proj = next(p for p in data["projects"] if p["title"] == choice)
+            if folder:
+                proj.setdefault("folder", str(folder))  # ties the card to its project folder
+            try:  # so a later scan doesn't import this same file a second time
+                self.cfg.setdefault("imported", {})[npath(path)] = Path(path).stat().st_mtime
+            except OSError:
+                pass
             msg = add_version(root, proj, note, path, adopt)
             proj["modified"] = datetime.now().isoformat(timespec="seconds")  # moves its card to the front
             if proj.get("hidden"):
