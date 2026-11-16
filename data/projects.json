@@ -148,6 +148,13 @@
             "V1_Assembly_inchObj",
             "V1_Assembly_mmObj"
           ]
+        },
+        {
+          "id": "v1",
+          "date": "2026-11-16",
+          "note": "This is the preliminary design for the removable box on the PC case. Unfortunately due to the dimensions, a standard Xbox controller is too large to fit inside, but I can make a spot for cables and a mouse.",
+          "source": "V1_Snap_Box.stp",
+          "file": "projects/3d-printed-portable-pc/v1-snap-box/v1.step"
         }
       ]
     }
