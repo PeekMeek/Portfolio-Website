@@ -79,6 +79,16 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v2",
+          "date": "2026-11-15",
+          "note": "Added holes for magnets to secure the cover to the Case_Base",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v2.step",
+          "changes": {
+            "V1_Cover": "modified"
+          }
         }
       ]
     }
