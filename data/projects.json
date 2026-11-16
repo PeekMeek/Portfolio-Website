@@ -322,6 +322,16 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v5",
+          "date": "2026-11-15",
+          "note": "Added a chamfer to the PCIE finger for DFAM",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v5.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ]
     }
