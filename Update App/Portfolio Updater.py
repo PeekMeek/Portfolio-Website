@@ -502,8 +502,18 @@ class App:
         except OSError:
             ok = False
         if not ok:
-            return self.log("Watch folder not available (is the network drive connected?). "
-                            "Tick 'Watch for new exports' once it is.")
+            # At sign-in the network drive often connects a little after the app starts,
+            # so keep trying every 30 seconds instead of giving up.
+            if not getattr(self, "waiting", False):
+                self.log("Watch folder not available yet (is the network drive connected?). "
+                         "Retrying every 30 seconds.")
+                self.waiting = True
+            if not self.v_on.get():
+                self.root.after(30000, self.autostart)
+            return
+        if self.v_on.get():
+            return  # already turned on by hand
+        self.waiting = False
         self.v_on.set(True)
         self.toggle()
 
@@ -718,4 +728,8 @@ class App:
 
 
 if __name__ == "__main__":
-    App().run()
+    import sys
+    app = App()
+    if "--minimized" in sys.argv:  # used by the Windows startup shortcut
+        app.root.iconify()
+    app.run()

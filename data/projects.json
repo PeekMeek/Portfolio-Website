@@ -312,6 +312,16 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v4",
+          "date": "2026-11-15",
+          "note": "Increased the thickness of the PCIE holder since it was too thin to be printed",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v4.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ]
     }
