@@ -158,7 +158,9 @@
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-16T11:53:23"
+      "modified": "2026-11-16T11:53:23",
+      "image": "projects/3d-printed-portable-pc/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "3-cim-gearbox",
@@ -209,7 +211,9 @@
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed Speakers",
       "imported": true,
-      "modified": "2026-11-16T12:16:29"
+      "modified": "2026-11-16T12:16:29",
+      "image": "projects/3d-printed-speakers/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "3d-printed-watercooled-sff-pc",
