@@ -89,6 +89,13 @@
           "changes": {
             "V1_Cover": "modified"
           }
+        },
+        {
+          "id": "v1",
+          "date": "2026-11-15",
+          "note": "Model for the top fan filters. A cutout is made for the handle. Magnet holes as well. A small, 1mm wide, 0.6mm cutout is placed around the border to improve the visual seam",
+          "source": "V1_Fan_Filter.stp",
+          "file": "projects/3d-printed-portable-pc/v1-fan-filter/v1.step"
         }
       ]
     }
