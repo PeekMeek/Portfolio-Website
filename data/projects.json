@@ -134,6 +134,20 @@
             "USB Female_1",
             "USB-C Frontplug AliExpress_1"
           ]
+        },
+        {
+          "id": "v3",
+          "date": "2026-11-15",
+          "note": "Learning from previous iterations, this portable PC goes back to air cooling and has a more traditional layout to make it easier for the end user to install/uninstall peripherals. It also adds front IO for easier peripheral insertion and a removable section that can store cables/peripherals during travel.",
+          "source": "V1_Assembly.stp",
+          "file": "projects/3d-printed-portable-pc/v1-assembly/v3.step",
+          "changes": {
+            "V1_Assembly": "modified"
+          },
+          "removed": [
+            "V1_Assembly_inchObj",
+            "V1_Assembly_mmObj"
+          ]
         }
       ]
     }
