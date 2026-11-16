@@ -26,8 +26,10 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:20px}
 .card{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);text-decoration:none;overflow:hidden}
 .card:hover{border-color:var(--accent)}
-.thumb{aspect-ratio:16/10;background:var(--well);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden}
-.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb{aspect-ratio:16/10;background:var(--well);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+/* the whole picture is shown (no cropping); a blurred, dimmed copy fills the leftover space */
+.thumb .fill{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(20px) brightness(.45);transform:scale(1.2)}
+.thumb .pic{position:relative;width:100%;height:100%;object-fit:contain;display:block}
 .thumb svg{width:34%;height:auto;stroke:var(--line);fill:none;stroke-width:2;stroke-linejoin:round}
 .cbody{display:flex;flex-direction:column;gap:12px;padding:20px 22px 22px;flex:1}
 .card h2{font-size:1.5rem}
@@ -187,11 +189,12 @@ async function loadParts(v) {
 // Designcenter convention: Z is up. VIEW_DIR is where the camera sits relative to the
 // model, matching the isometric view in Designcenter (X toward the left, Y toward the
 // lower left, Z up). Change these three numbers to load from a different corner.
-const VIEW_DIR = new THREE.Vector3(-1, 1, 1).normalize();
+// (Plain numbers here, so the cards still show even if the 3D library fails to load.)
+const VIEW_DIR = [-1, 1, 1];
 const AXES = [
-  {dir: new THREE.Vector3(1, 0, 0), color: 0xff4f4f, label: "X"},
-  {dir: new THREE.Vector3(0, 1, 0), color: 0x4fdc6a, label: "Y"},
-  {dir: new THREE.Vector3(0, 0, 1), color: 0x4f8dff, label: "Z"},
+  {dir: [1, 0, 0], color: 0xff4f4f, label: "X"},
+  {dir: [0, 1, 0], color: 0x4fdc6a, label: "Y"},
+  {dir: [0, 0, 1], color: 0x4f8dff, label: "Z"},
 ];
 const TRIAD_SIZE = 96;  // px
 
@@ -211,7 +214,8 @@ function makeTriad() {
     const head = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.26, 16), mat);
     head.position.y = 0.91;
     arm.add(shaft, head);
-    arm.quaternion.setFromUnitVectors(yAxis, a.dir);
+    const dir = new THREE.Vector3(...a.dir);
+    arm.quaternion.setFromUnitVectors(yAxis, dir);
     scene.add(arm);
     const c = document.createElement("canvas");
     c.width = c.height = 64;
@@ -221,7 +225,7 @@ function makeTriad() {
     g.fillStyle = "#" + a.color.toString(16).padStart(6, "0");
     g.fillText(a.label, 32, 34);
     const label = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false}));
-    label.position.copy(a.dir).multiplyScalar(1.32);
+    label.position.copy(dir).multiplyScalar(1.32);
     label.scale.setScalar(0.42);
     scene.add(label);
   });
@@ -378,7 +382,7 @@ function frame(view) {
   if (box.isEmpty()) return;
   const c = box.getCenter(new THREE.Vector3()), d = box.getSize(new THREE.Vector3()).length();
   view.cam.near = d / 100; view.cam.far = d * 100; view.cam.updateProjectionMatrix();
-  view.cam.position.copy(c).addScaledVector(VIEW_DIR, d * 1.9);
+  view.cam.position.copy(c).addScaledVector(new THREE.Vector3(...VIEW_DIR).normalize(), d * 1.9);
   view.ctl.target.copy(c);
   view.ctl.update();
 }
@@ -422,7 +426,9 @@ function home() {
   <div class="grid">${list.map(p => {
     const n = p.versions.length;
     const when = updated(p).slice(0, 10);
-    const thumb = p.image ? `<img src="${esc(p.image)}" alt="${esc(p.title)} preview" loading="lazy">` : PLACEHOLDER;
+    const thumb = p.image
+      ? `<img class="fill" src="${esc(p.image)}" alt="" aria-hidden="true" loading="lazy"><img class="pic" src="${esc(p.image)}" alt="${esc(p.title)} preview" loading="lazy">`
+      : PLACEHOLDER;
     return `<a class="card" href="#/${esc(p.id)}"><div class="thumb">${thumb}</div><div class="cbody"><h2>${esc(p.title)}</h2>${p.summary ? `<p>${esc(p.summary)}</p>` : ""}
     ${(p.tags || []).length ? `<div class="tags">${p.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
     ${n ? `<div class="ruler" aria-hidden="true">${p.versions.map((_, i) => `<i style="--c:${tickColor(i, n)}"></i>`).join("")}</div>` : ""}
