@@ -185,10 +185,20 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v3",
+          "date": "2026-11-16",
+          "note": "Added vent holes to the back of the cover. Intentionally made it so there are more vent holes going in than out so that the case has \"positive\" pressure and will help prevent dust from getting inside of it.",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v3.step",
+          "changes": {
+            "V1_Cover": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-16T14:40:15",
+      "modified": "2026-11-16T17:35:29",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
