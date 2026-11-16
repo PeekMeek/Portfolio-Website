@@ -196,7 +196,7 @@ def project_folders(projects_dir):
 
 
 WEB_FOLDER = "website files"  # only files inside a folder with this name go on the site
-IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp")
 
 
 def scan_folder(d):
@@ -243,13 +243,17 @@ def find_web_dirs(projects_dir):
     return out
 
 
-def web_steps(web_dir):
-    """STEP files inside one Website Files folder, subfolders included."""
+def web_files(web_dir, exts):
+    """Files with these endings inside one Website Files folder, subfolders included."""
     found = []
     for dirpath, dirnames, files in os.walk(web_dir):
         dirnames[:] = [x for x in dirnames if not x.startswith(SKIP)]
-        found += [Path(dirpath, f) for f in files if not f.startswith(SKIP) and Path(f).suffix.lower() in STEP_EXT]
+        found += [Path(dirpath, f) for f in files if not f.startswith(SKIP) and Path(f).suffix.lower() in exts]
     return found
+
+
+def web_steps(web_dir):
+    return web_files(web_dir, STEP_EXT)
 
 
 def match_project(data, links, d):
@@ -867,14 +871,40 @@ class App:
         return (s.st_mtime, s.st_size)
 
     def steps(self):
-        """(STEP file, its project folder) for every file in the Website Files folders."""
+        """(file, its project folder) for every STEP file and picture in the Website Files folders."""
         out = []
         for proj_dir, web in self.web_dirs:
             try:
-                out += [(p, proj_dir) for p in web_steps(web)]
+                out += [(p, proj_dir) for p in web_files(web, STEP_EXT + IMAGE_EXT)]
             except OSError:
                 pass  # a folder that was moved or deleted
         return out
+
+    def update_covers(self, folders):
+        """Set each project's card picture from the newest picture in its Website Files.
+        folders: {project folder: [(modified time, picture path)]}."""
+        if self.busy:  # another task is running: try again shortly instead of dropping it
+            return self.root.after(5000, self.update_covers, folders)
+        root = Path(self.v_root.get())
+        imported = self.cfg.setdefault("imported", {})
+        def work():
+            data, links, changed = load_data(root), self.cfg.get("links", {}), []
+            for proj_dir, images in folders.items():
+                p = match_project(data, links, proj_dir)
+                if p is None:
+                    self.tlog(f"Picture in {Path(proj_dir).name} kept for later: that folder has no card yet.")
+                elif not p.get("hidden") and import_cover(root, p, sorted(images), imported):
+                    p.setdefault("folder", str(proj_dir))
+                    changed.append(p["title"])
+            if changed:
+                save_data(root, data)
+            return changed
+        def done(changed):
+            for t in changed:
+                self.log(f"{t}: card picture updated.")
+            if changed:
+                self.push(root, "Update card picture: " + ", ".join(changed))
+        self.job(work, done)
 
     def target(self, proj_dir):
         """The project title for a project folder, or None if it has no card yet."""
@@ -892,9 +922,12 @@ class App:
                 if p not in self.seen and p not in self.pending and s[0] < self.watch_from:
                     self.seen[p] = s  # was already there before watching started
                     continue
-                if self.pending.get(p) == s:  # unchanged for one poll: export has finished
+                if self.pending.get(p) == s:  # unchanged for one poll: the file has finished copying
                     self.seen[p] = s
                     self.pending.pop(p)
+                    if p.suffix.lower() in IMAGE_EXT:  # a picture: becomes the card picture, no questions
+                        self.update_covers({proj_dir: [(s[0], p)]})
+                        continue
                     self.root.deiconify(); self.root.lift()
                     Prompt(self, p, self.target(proj_dir), proj_dir)
                 else:
@@ -915,13 +948,20 @@ class App:
         pdir = self.v_projects.get()
         def work():
             dirs = find_web_dirs(pdir)
-            files = []
+            files, pics = [], {}
             for proj_dir, web in dirs:
                 files += [(p, proj_dir) for p in web_steps(web)]
-            return dirs, files
+                for img in web_files(web, IMAGE_EXT):
+                    try:
+                        pics.setdefault(proj_dir, []).append((img.stat().st_mtime, img))
+                    except OSError:
+                        pass
+            return dirs, files, pics
         def done(res):
-            self.web_dirs, files = res
+            self.web_dirs, files, pics = res
             self.refresh_files(files)
+            if pics:
+                self.update_covers(pics)
         self.job(work, done)
 
     def refresh_files(self, files):
@@ -1123,14 +1163,18 @@ class App:
                 if m > (p.get("modified") or ""):
                     p["modified"] = m
                     dated += 1
-                # only folders the scan created get their files copied in, and only once shown
-                if p.get("imported") and not p.get("hidden"):
+                if p.get("hidden"):
+                    continue  # hidden cards get their files when they're shown
+                # every shown card takes its picture from Website Files
+                if import_cover(root, p, images, imported):
+                    self.tlog(f"{p['title']}: card picture updated.")
+                    dated += 1
+                # STEP files are copied in only for folders the scan created; other
+                # projects get theirs through the "What did you change?" window
+                if p.get("imported"):
                     n = import_models(root, p, steps, imported, self.tlog)
                     if n:
                         self.tlog(f"{p['title']}: added {n} model version(s).")
-                    if import_cover(root, p, images, imported):
-                        self.tlog(f"{p['title']}: card picture updated.")
-                        dated += 1
                     models += n
             if made or models or dated:
                 save_data(root, data)
@@ -1157,9 +1201,10 @@ class App:
             else:
                 p["hidden"] = True
             n = 0
-            if show and p.get("imported") and p.get("folder") and Path(p["folder"]).is_dir():
+            if show and p.get("folder") and Path(p["folder"]).is_dir():
                 _, steps, images = scan_folder(Path(p["folder"]))
-                n = import_models(root, p, steps, imported, self.tlog)
+                if p.get("imported"):
+                    n = import_models(root, p, steps, imported, self.tlog)
                 import_cover(root, p, images, imported)
             save_data(root, data)
             return n
