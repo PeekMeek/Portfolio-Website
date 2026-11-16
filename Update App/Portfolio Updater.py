@@ -419,31 +419,65 @@ class Manage(tk.Toplevel):
         self.desc.grid(row=1, column=1, **pad)
         ttk.Label(self, text="Shown under the project's title on its card and its page.",
                   foreground="#666").grid(row=2, column=1, padx=10, sticky="w")
-        ttk.Button(self, text="Save description", command=self.save_desc).grid(row=3, column=1, padx=10, pady=(2, 6), sticky="e")
 
-        ttk.Separator(self).grid(row=4, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        ttk.Label(self, text="Windows").grid(row=5, column=0, sticky="nw", padx=10, pady=4)
+        ttk.Label(self, text="Tags").grid(row=3, column=0, sticky="nw", padx=10, pady=4)
+        tf = ttk.Frame(self)
+        tf.grid(row=3, column=1, **pad)
+        self.tags = tk.Listbox(tf, width=28, height=5, exportselection=False)
+        self.tags.pack(side="left")
+        side = ttk.Frame(tf)
+        side.pack(side="left", padx=(8, 0), anchor="n")
+        self.tag_in = ttk.Entry(side, width=22)
+        self.tag_in.pack(fill="x")
+        self.tag_in.bind("<Return>", lambda e: self.add_tag())
+        ttk.Button(side, text="Add tag", command=self.add_tag).pack(fill="x", pady=(4, 0))
+        ttk.Button(side, text="Remove selected tag", command=self.remove_tag).pack(fill="x", pady=(4, 0))
+        ttk.Label(self, text="Tags appear on the project's card on the home page.",
+                  foreground="#666").grid(row=4, column=1, padx=10, sticky="w")
+        ttk.Button(self, text="Save description and tags", command=self.save_details).grid(
+            row=5, column=1, padx=10, pady=(4, 6), sticky="e")
+
+        ttk.Separator(self).grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        ttk.Label(self, text="Windows").grid(row=7, column=0, sticky="nw", padx=10, pady=4)
         self.lb = tk.Listbox(self, width=52, height=6, exportselection=False)
-        self.lb.grid(row=5, column=1, **pad)
-        ttk.Button(self, text="Delete window", command=self.delete).grid(row=6, column=1, padx=10, pady=(2, 6), sticky="e")
+        self.lb.grid(row=7, column=1, **pad)
+        ttk.Button(self, text="Delete window", command=self.delete).grid(row=8, column=1, padx=10, pady=(2, 6), sticky="e")
 
-        ttk.Separator(self).grid(row=7, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        ttk.Separator(self).grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
         b = ttk.Frame(self)
-        b.grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        b.grid(row=10, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
         ttk.Button(b, text="Delete project", command=self.delete_project).pack(side="left")
         ttk.Button(b, text="Close", command=self.destroy).pack(side="right")
         self.load()
         self.transient(app.root)
         self.grab_set()
 
-    def save_desc(self):
+    def add_tag(self):
+        have = {t.lower() for t in self.tags.get(0, "end")}
+        for t in self.tag_in.get().split(","):  # "Bracket, PETG" adds two tags
+            t = t.strip()
+            if t and t.lower() not in have:
+                self.tags.insert("end", t)
+                have.add(t.lower())
+        self.tag_in.delete(0, "end")
+
+    def remove_tag(self):
+        sel = self.tags.curselection()
+        if not sel:
+            return messagebox.showinfo("Remove tag", "Select a tag in the list first.", parent=self)
+        self.tags.delete(sel[0])
+
+    def save_details(self):
         p = self.project()
         if not p:
             return
+        if self.tag_in.get().strip():
+            self.add_tag()  # a tag typed but not yet added still counts
         text = self.desc.get("1.0", "end").strip()
-        if text == (p.get("summary") or "").strip():
-            return self.app.log(f"No change to the description of {p['title']}.")
-        if self.app.set_description(p["title"], text):
+        tags = list(self.tags.get(0, "end"))
+        if text == (p.get("summary") or "").strip() and tags == list(p.get("tags") or []):
+            return self.app.log(f"No changes to the description or tags of {p['title']}.")
+        if self.app.set_details(p["title"], text, tags):
             self.load()
 
     def delete_project(self):
@@ -474,8 +508,12 @@ class Manage(tk.Toplevel):
         self.lb.delete(0, "end")
         p = self.project()
         self.desc.delete("1.0", "end")
+        self.tags.delete(0, "end")
+        self.tag_in.delete(0, "end")
         if p:
             self.desc.insert("1.0", p.get("summary") or "")
+            for t in p.get("tags") or []:
+                self.tags.insert("end", t)
         self.wins = windows_of(p) if p else []
         for label, _, vs in self.wins:
             self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
@@ -764,18 +802,19 @@ class App:
         self.push(root, f"{title}: removed {label}")
         return True
 
-    def set_description(self, title, text):
+    def set_details(self, title, text, tags):
         root = Path(self.v_root.get())
         try:
             data = load_data(root)
             proj = next(p for p in data["projects"] if p["title"] == title)
             proj["summary"] = text
+            proj["tags"] = tags
             save_data(root, data)
         except Exception as e:
             messagebox.showerror("Could not save", str(e))
             return False
-        self.log(f"Saved the description of {title}.")
-        self.push(root, f"{title}: update description")
+        self.log(f"Saved the description and tags of {title}" + (f" ({', '.join(tags)})." if tags else " (no tags)."))
+        self.push(root, f"{title}: update description and tags")
         return True
 
     def remove_project(self, title):

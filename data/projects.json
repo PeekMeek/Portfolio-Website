@@ -9,7 +9,9 @@
       "id": "3d-printed-portable-pc",
       "title": "3D Printed Portable PC",
       "summary": "A refined take on the 3D Printed Portable PC.",
-      "tags": [],
+      "tags": [
+        "Computer"
+      ],
       "versions": [
         {
           "id": "v1",
