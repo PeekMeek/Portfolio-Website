@@ -106,6 +106,16 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v8",
+          "date": "2026-11-15",
+          "note": "Added a 1mm wide, 0.6mm deep cutout to improve the seams of the design.",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v8.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ]
     }
