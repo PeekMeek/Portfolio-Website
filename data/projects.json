@@ -225,10 +225,20 @@
           "source": "V1_Case_Base.stp",
           "file": "projects/3d-printed-portable-pc/v1-case-base/v13.step",
           "changes": {}
+        },
+        {
+          "id": "v5",
+          "date": "2026-11-17",
+          "note": "Added a stiffening bar to the middle of the fan filters to prevent defects.",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v5.step",
+          "changes": {
+            "V1_Cover": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-17T15:48:03",
+      "modified": "2026-11-17T16:12:43",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
