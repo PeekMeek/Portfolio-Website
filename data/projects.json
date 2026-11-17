@@ -1098,11 +1098,20 @@
       "title": "Ryan_Ellis_PC",
       "summary": "",
       "tags": [],
-      "versions": [],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2026-11-17",
+          "note": "Imported from Website Files/Copper_Case_Assembly.stp",
+          "source": "Copper_Case_Assembly.stp",
+          "file": "projects/ryan-ellis-pc/copper-case-assembly/v1.step"
+        }
+      ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\Ryan_Ellis_PC",
       "imported": true,
-      "hidden": true,
-      "modified": "2025-12-01T13:17:55"
+      "modified": "2025-12-01T13:17:55",
+      "image": "projects/ryan-ellis-pc/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "sell",

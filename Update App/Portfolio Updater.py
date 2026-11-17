@@ -453,6 +453,74 @@ def publish(root, message, report):
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+# ---------- Dark theme (same colors as the website) ----------
+BG, PANEL, FIELD, LINE = "#121212", "#1b1b1b", "#161616", "#2c2c2c"
+INK, MUTE, ACCENT, ACCENT_DEEP = "#efe8e6", "#a69e9c", "#f47068", "#c93b37"
+
+
+def apply_theme(root):
+    """Dark window colors for every window the app opens."""
+    # classic Tk widgets (text boxes, lists, the rename dialog) read these defaults
+    for k, v in {"*background": BG, "*foreground": INK, "*Text.background": FIELD, "*Text.insertBackground": INK,
+                 "*Text.selectBackground": ACCENT_DEEP, "*Text.selectForeground": "#ffffff",
+                 "*Listbox.background": FIELD, "*Listbox.selectBackground": ACCENT_DEEP,
+                 "*Listbox.selectForeground": "#ffffff", "*Entry.background": FIELD, "*Entry.insertBackground": INK,
+                 "*highlightBackground": LINE, "*highlightColor": ACCENT, "*highlightThickness": 1,
+                 "*relief": "flat", "*borderWidth": 0, "*activeBackground": "#262626", "*activeForeground": INK,
+                 "*Button.padX": 10, "*Button.padY": 3,
+                 "*TCombobox*Listbox.background": FIELD, "*TCombobox*Listbox.foreground": INK,
+                 "*TCombobox*Listbox.selectBackground": ACCENT_DEEP}.items():
+        root.option_add(k, v)
+    root.configure(background=BG)
+    s = ttk.Style(root)
+    s.theme_use("clam")  # the built-in theme that accepts custom colors
+    s.configure(".", background=BG, foreground=INK, fieldbackground=FIELD, bordercolor=LINE,
+                lightcolor=BG, darkcolor=BG, troughcolor=BG, focuscolor=ACCENT,
+                selectbackground=ACCENT_DEEP, selectforeground="#ffffff", insertcolor=INK, arrowcolor=INK,
+                font=("Segoe UI", 9))
+    s.configure("Hint.TLabel", foreground=MUTE)
+    s.configure("TButton", background=PANEL, foreground=INK, bordercolor=LINE, padding=(10, 4))
+    s.map("TButton", background=[("pressed", ACCENT_DEEP), ("active", "#262626")],
+          bordercolor=[("focus", ACCENT), ("active", "#3a3a3a")])
+    s.configure("Accent.TButton", background=ACCENT_DEEP, foreground="#ffffff", bordercolor=ACCENT_DEEP)
+    s.map("Accent.TButton", background=[("pressed", "#922323"), ("active", ACCENT)],
+          foreground=[("active", "#121212")])
+    s.configure("TCheckbutton", background=BG, foreground=INK, indicatorbackground=FIELD,
+                indicatorforeground="#ffffff", indicatormargin=(0, 0, 6, 0))
+    s.map("TCheckbutton", indicatorbackground=[("selected", ACCENT_DEEP), ("active", "#262626")],
+          background=[("active", BG)])
+    s.configure("TEntry", fieldbackground=FIELD, foreground=INK, bordercolor=LINE, insertcolor=INK)
+    s.map("TEntry", fieldbackground=[("disabled", BG)], foreground=[("disabled", MUTE)],
+          bordercolor=[("focus", ACCENT)])
+    s.configure("TCombobox", fieldbackground=FIELD, background=PANEL, foreground=INK, arrowcolor=INK)
+    s.map("TCombobox", fieldbackground=[("readonly", FIELD)], foreground=[("readonly", INK)],
+          bordercolor=[("focus", ACCENT)])
+    s.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG, bordercolor=BG, arrowcolor=MUTE)
+    s.map("Vertical.TScrollbar", background=[("active", "#333333")])
+    s.configure("TSeparator", background=LINE)
+
+
+def dark_titlebar(win):
+    """Dark title bar on Windows 10/11, with the red accent as the window border on Windows 11.
+    Does nothing elsewhere or on older Windows versions."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        set_attr = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        on = ctypes.c_int(1)
+        for attr in (20, 19):  # "use dark mode": 20 on current Windows, 19 on older Windows 10 builds
+            if set_attr(hwnd, attr, ctypes.byref(on), ctypes.sizeof(on)) == 0:
+                break
+        bgr = lambda h: ctypes.c_int(int(h[5:7] + h[3:5] + h[1:3], 16))  # COLORREF is blue-green-red
+        for attr, color in ((35, BG), (34, ACCENT_DEEP)):  # Windows 11: caption color, border color
+            c = bgr(color)
+            set_attr(hwnd, attr, ctypes.byref(c), ctypes.sizeof(c))
+    except Exception:
+        pass
+
 
 class Prompt(tk.Toplevel):
     def __init__(self, app, path, project=None, folder=None):
@@ -494,9 +562,10 @@ class Prompt(tk.Toplevel):
         self.adopt_box.grid(row=8, column=0, columnspan=2, **pad)
         b = ttk.Frame(self)
         b.grid(row=9, column=0, columnspan=2, pady=8)
-        ttk.Button(b, text="Save version", command=self.ok).pack(side="left", padx=6)
+        ttk.Button(b, text="Save version", style="Accent.TButton", command=self.ok).pack(side="left", padx=6)
         ttk.Button(b, text="Skip", command=self.destroy).pack(side="left")
         self.refresh()
+        dark_titlebar(self)
         self.transient(app.root); self.grab_set(); self.lift()
         self.attributes("-topmost", True)
         self.note.focus_set()
@@ -584,7 +653,7 @@ class Manage(tk.Toplevel):
         box, self.hide_lb = listbox(sh, 34, 12, "extended")
         box.grid(row=1, column=2, sticky="ns")
         ttk.Label(sh, text="Click a project to edit it below. Select several with Ctrl or Shift, "
-                           "then use the arrows to move them.", foreground="#666").grid(
+                           "then use the arrows to move them.", style="Hint.TLabel").grid(
             row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
         for lb, other in ((self.show_lb, self.hide_lb), (self.hide_lb, self.show_lb)):
             lb.bind("<<ListboxSelect>>", lambda e, lb=lb, other=other: self.picked(lb, other))
@@ -592,15 +661,25 @@ class Manage(tk.Toplevel):
         self.hide_lb.bind("<Double-Button-1>", lambda e: self.move(True))
 
         ttk.Separator(self).grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        self.heading = ttk.Label(self, font=("Segoe UI", 11, "bold"))
-        self.heading.grid(row=2, column=0, columnspan=2, sticky="w", padx=10)
+        # ---- Title (what the website shows; the folder keeps its own name) ----
+        ttk.Label(self, text="Title").grid(row=2, column=0, sticky="nw", padx=10, pady=4)
+        tt = ttk.Frame(self)
+        tt.grid(row=2, column=1, **pad)
+        top_line = ttk.Frame(tt)
+        top_line.pack(anchor="w")
+        self.title_in = ttk.Entry(top_line, width=44, font=("Segoe UI", 11, "bold"))
+        self.title_in.pack(side="left")
+        self.heading = ttk.Label(top_line, style="Hint.TLabel")  # "on the website" / "hidden"
+        self.heading.pack(side="left", padx=(8, 0))
+        self.folder_note = ttk.Label(tt, style="Hint.TLabel")
+        self.folder_note.pack(anchor="w", pady=(2, 0))
 
         # ---- Description ----
         ttk.Label(self, text="Project description").grid(row=3, column=0, sticky="nw", padx=10, pady=4)
         self.desc = tk.Text(self, width=58, height=3, wrap="word")
         self.desc.grid(row=3, column=1, **pad)
         ttk.Label(self, text="Shown under the project's title on its card and its page.",
-                  foreground="#666").grid(row=4, column=1, padx=10, sticky="w")
+                  style="Hint.TLabel").grid(row=4, column=1, padx=10, sticky="w")
 
         # ---- Tags: this project's tags  <<  >>  every tag used so far ----
         ttk.Label(self, text="Tags").grid(row=5, column=0, sticky="nw", padx=10, pady=4)
@@ -630,8 +709,8 @@ class Manage(tk.Toplevel):
         self.tag_in.bind("<Return>", lambda e: self.new_tag())
         ttk.Button(new, text="Create and add", command=self.new_tag).pack(side="left")
         ttk.Label(self, text="Tags appear on the project's card on the home page.",
-                  foreground="#666").grid(row=6, column=1, padx=10, sticky="w")
-        ttk.Button(self, text="Save description and tags", command=self.save_details).grid(
+                  style="Hint.TLabel").grid(row=6, column=1, padx=10, sticky="w")
+        ttk.Button(self, text="Save title, description and tags", style="Accent.TButton", command=self.save_details).grid(
             row=7, column=1, padx=10, pady=(4, 6), sticky="e")
 
         # ---- Windows ----
@@ -648,6 +727,7 @@ class Manage(tk.Toplevel):
         ttk.Button(b, text="Close", command=self.close).pack(side="right")
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.load()
+        dark_titlebar(self)
         self.transient(app.root)
         self.grab_set()
 
@@ -764,15 +844,16 @@ class Manage(tk.Toplevel):
             self.load()
 
     def edits(self):
-        """(description, tags) as they stand in the boxes."""
-        return self.desc.get("1.0", "end").strip(), self.project_tags()
+        """(title, description, tags) as they stand in the boxes."""
+        return self.title_in.get().strip(), self.desc.get("1.0", "end").strip(), self.project_tags()
 
     def dirty(self):
         p = self.project()
         if not p:
             return False
-        text, tags = self.edits()
-        return text != (p.get("summary") or "").strip() or tags != list(p.get("tags") or []) or bool(self.tag_in.get().strip())
+        title, text, tags = self.edits()
+        return (title != p["title"] or text != (p.get("summary") or "").strip()
+                or tags != list(p.get("tags") or []) or bool(self.tag_in.get().strip()))
 
     def keep_edits(self):
         """Before leaving a project with unsaved changes, offer to save them.
@@ -780,11 +861,11 @@ class Manage(tk.Toplevel):
         if not self.dirty():
             return True
         ans = messagebox.askyesnocancel("Unsaved changes",
-                                        f"Save the changes to the description and tags of {self.current}?", parent=self)
+                                        f"Save the changes to the title, description and tags of {self.current}?", parent=self)
         if ans is None:
             return False
         if ans:
-            self.save_details(reload=False)
+            return self.save_details(reload=False) is not False
         return True
 
     def save_details(self, reload=True):
@@ -793,10 +874,20 @@ class Manage(tk.Toplevel):
             return
         if self.tag_in.get().strip():
             self.new_tag()  # a tag typed but not yet added still counts
-        text, tags = self.edits()
-        if text == (p.get("summary") or "").strip() and tags == list(p.get("tags") or []):
-            return self.app.log(f"No changes to the description or tags of {p['title']}.")
-        if self.app.set_details(p["title"], text, tags) and reload:
+        title, text, tags = self.edits()
+        if not title:
+            messagebox.showwarning("Title", "The title can't be empty.", parent=self)
+            return False
+        if title.lower() != p["title"].lower() and any(
+                x["title"].lower() == title.lower() for x in self.data["projects"]):
+            messagebox.showwarning("Title", f'Another project is already called "{title}". Choose a different title.', parent=self)
+            return False
+        if title == p["title"] and text == (p.get("summary") or "").strip() and tags == list(p.get("tags") or []):
+            return self.app.log(f"No changes to {p['title']}.")
+        if not self.app.set_details(p["title"], text, tags, title):
+            return False
+        self.current = title
+        if reload:
             self.load()
 
     def close(self):
@@ -851,9 +942,14 @@ class Manage(tk.Toplevel):
         self.desc.delete("1.0", "end")
         self.tags.delete(0, "end")
         self.tag_in.delete(0, "end")
+        self.title_in.delete(0, "end")
         state = "on the website" if p and not p.get("hidden") else "hidden"
-        self.heading.config(text=f"{p['title']}  ({state})" if p else "No projects yet")
+        self.heading.config(text=f"({state})" if p else "No projects yet")
+        folder = Path(p["folder"]).name if p and p.get("folder") else None
+        self.folder_note.config(text=f'Folder: {folder}  (the folder keeps its name; only the website shows the title)'
+                                if folder else "Shown as the project's name on its card and its page.")
         if p:
+            self.title_in.insert(0, p["title"])
             self.desc.insert("1.0", p.get("summary") or "")
             for t in p.get("tags") or []:
                 self.tags.insert("end", t)
@@ -889,6 +985,7 @@ class App:
         except (OSError, ValueError):
             self.cfg = {}
         r = self.root = tk.Tk()
+        apply_theme(r)
         r.title("Portfolio Updater")
         r.geometry("620x580")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
@@ -916,6 +1013,7 @@ class App:
         self.out.grid(row=7, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
         f.rowconfigure(7, weight=1)
         r.protocol("WM_DELETE_WINDOW", self.close)
+        dark_titlebar(r)
         r.after(500, self.autostart)
 
     def autostart(self):
@@ -1437,19 +1535,32 @@ class App:
         self.push(root, (f'Remove tag "{old}"' if new is None else f'Rename tag "{old}" to "{new}"'))
         return True
 
-    def set_details(self, title, text, tags):
+    def set_details(self, title, text, tags, new_title=None):
+        """Save a project's description and tags, and optionally a new title. The title is
+        only what the website shows: the project folder and the page address stay the same."""
         root = Path(self.v_root.get())
+        new_title = new_title or title
         try:
             data = load_data(root)
             proj = next(p for p in data["projects"] if p["title"] == title)
+            proj["title"] = new_title  # "folder" and "id" (the page address) are left as they are
             proj["summary"] = text
             proj["tags"] = tags
             save_data(root, data)
         except Exception as e:
             messagebox.showerror("Could not save", str(e))
             return False
-        self.log(f"Saved the description and tags of {title}" + (f" ({', '.join(tags)})." if tags else " (no tags)."))
-        self.push(root, f"{title}: update description and tags")
+        if new_title != title:
+            # the updater keeps track of projects by title, so follow the rename
+            links = self.cfg.get("links", {})
+            for k in [k for k, t in links.items() if t == title]:
+                links[k] = new_title
+            if self.cfg.get("last") == title:
+                self.cfg["last"] = new_title
+            self.log(f'Renamed "{title}" to "{new_title}" on the website.')
+        self.log(f"Saved {new_title}" + (f" (tags: {', '.join(tags)})." if tags else " (no tags)."))
+        self.push(root, f"{new_title}: update title, description and tags"
+                  if new_title != title else f"{new_title}: update description and tags")
         return True
 
     def remove_project(self, title):
