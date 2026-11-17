@@ -926,8 +926,11 @@
     {
       "id": "pc-case-watercooled",
       "title": "PC Case Watercooled",
-      "summary": "",
-      "tags": [],
+      "summary": "A large watercooled computer case to study best practices to secure large 3d prints",
+      "tags": [
+        "3D Prints",
+        "Computer"
+      ],
       "versions": [
         {
           "id": "v1",
