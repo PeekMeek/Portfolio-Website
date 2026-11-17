@@ -260,10 +260,45 @@
       "title": "3d Printed Watercooled SFF PC",
       "summary": "",
       "tags": [],
-      "versions": [],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2025-04-17",
+          "note": "Imported from V2/Website Files/Case_Base.stp",
+          "source": "Case_Base.stp",
+          "file": "projects/3d-printed-watercooled-sff-pc/case-base/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-04-17",
+          "note": "Imported from V2/Website Files/Rear_Cable_Cover.stp",
+          "source": "Rear_Cable_Cover.stp",
+          "file": "projects/3d-printed-watercooled-sff-pc/rear-cable-cover/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-04-17",
+          "note": "Imported from V2/Website Files/Front_Cable_Cover.stp",
+          "source": "Front_Cable_Cover.stp",
+          "file": "projects/3d-printed-watercooled-sff-pc/front-cable-cover/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-04-17",
+          "note": "Imported from V2/Website Files/IO_Extender.stp",
+          "source": "IO_Extender.stp",
+          "file": "projects/3d-printed-watercooled-sff-pc/io-extender/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-04-17",
+          "note": "Imported from V2/Website Files/Fan_Filter.stp",
+          "source": "Fan_Filter.stp",
+          "file": "projects/3d-printed-watercooled-sff-pc/fan-filter/v1.step"
+        }
+      ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed Watercooled SFF PC",
       "imported": true,
-      "hidden": true,
       "modified": "2026-10-23T00:09:44"
     },
     {
