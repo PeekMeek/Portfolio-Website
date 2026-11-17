@@ -197,10 +197,20 @@
           "changes": {
             "V1_Cover": "modified"
           }
+        },
+        {
+          "id": "v4",
+          "date": "2026-11-17",
+          "note": "Split cover into two and added dovetail as it is too large to fit on the buildplate",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v4.step",
+          "changes": {
+            "V1_Cover": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-16T17:35:29",
+      "modified": "2026-11-17T12:44:01",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
