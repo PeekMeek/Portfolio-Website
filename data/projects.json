@@ -217,10 +217,18 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v13",
+          "date": "2026-11-17",
+          "note": "Updated model to show changes from previous version",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v13.step",
+          "changes": {}
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-17T15:42:45",
+      "modified": "2026-11-17T15:48:03",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
