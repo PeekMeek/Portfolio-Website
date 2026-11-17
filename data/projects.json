@@ -207,10 +207,20 @@
           "changes": {
             "V1_Cover": "modified"
           }
+        },
+        {
+          "id": "v12",
+          "date": "2026-11-17",
+          "note": "Increased opening for PCIE slots to improve assembly ergonomics. Also added a stiffener to the IO cutout due to print quality issues with the thin vertical bar.",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v12.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-17T12:44:01",
+      "modified": "2026-11-17T15:42:45",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },

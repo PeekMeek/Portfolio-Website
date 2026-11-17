@@ -485,6 +485,152 @@ def publish(root, message, report):
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+# ---------- System tray (needs: py -m pip install pystray pillow) ----------
+try:
+    import pystray
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageTk
+except ImportError:  # still works as a normal window without them
+    pystray = Image = ImageDraw = ImageEnhance = ImageFilter = ImageOps = ImageTk = None
+
+INSTANCE_PORT = 47613  # lets a second launch bring the running updater forward instead
+
+
+def tray_image(size=64):
+    """The app icon: a red wireframe cube on the site's near-black."""
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d, s = ImageDraw.Draw(im), size / 64
+    d.rounded_rectangle([1 * s, 1 * s, 63 * s, 63 * s], radius=12 * s, fill="#121212")
+    P = lambda x, y: (x * s, y * s)
+    top, l, r, c, bl, br, b = P(32, 10), P(12, 21), P(52, 21), P(32, 32), P(12, 43), P(52, 43), P(32, 54)
+    w = max(2, round(4.5 * s))
+    d.line([top, r, br, b, bl, l, top], fill="#f47068", width=w, joint="curve")
+    d.line([l, c, r], fill="#f47068", width=w, joint="curve")
+    d.line([c, b], fill="#f47068", width=w)
+    return im
+
+
+class Tray:
+    """The icon by the clock. Left-click opens the window; right-click shows the menu."""
+    def __init__(self, app):
+        self.app = app
+        on_ui = lambda fn: (lambda icon, item: app.root.after(0, fn))  # menu clicks run on the window's thread
+        menu = pystray.Menu(
+            pystray.MenuItem("Open Portfolio Updater", on_ui(app.toggle_panel), default=True),
+            pystray.MenuItem("Open website", on_ui(app.open_site)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Watch Website Files folders", on_ui(app.toggle_from_tray),
+                             checked=lambda item: app.watching),
+            pystray.MenuItem("Refresh", on_ui(app.refresh)),
+            pystray.MenuItem("Scan projects folder", on_ui(app.scan)),
+            pystray.MenuItem("Manage projects", on_ui(lambda: (app.show(), app.manage()))),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit", on_ui(app.quit)))
+        self.icon = pystray.Icon("portfolio_updater", tray_image(), "Portfolio Updater", menu)
+        threading.Thread(target=self.icon.run, daemon=True).start()
+
+    def tip(self, text):
+        """Text shown when you hover over the icon."""
+        try:
+            self.icon.title = ("Portfolio Updater: " + text)[:127]
+        except Exception:
+            pass
+
+    def note(self, text):
+        """A Windows notification from the icon."""
+        try:
+            self.icon.notify(text, "Portfolio Updater")
+        except Exception:
+            pass
+
+    def stop(self):
+        try:
+            self.icon.stop()
+        except Exception:
+            pass
+
+
+def center_on(win, master):
+    """Open a dialog centered over the updater window, kept on screen."""
+    try:
+        win.update_idletasks()
+        w, h = win.winfo_reqwidth(), win.winfo_reqheight()
+        if master.state() == "withdrawn":
+            left, top, right, bottom = work_area(master)
+            x, y = right - w - 30, bottom - h - 60
+        else:
+            x = master.winfo_rootx() + (master.winfo_width() - w) // 2
+            y = master.winfo_rooty() + (master.winfo_height() - h) // 2
+        left, top, right, bottom = work_area(master)
+        x = min(max(left, x), right - w - 16)
+        y = min(max(top, y), bottom - h - 40)
+        win.geometry(f"+{x}+{y}")
+    except Exception:
+        pass
+
+
+def work_area(root):
+    """The screen area not covered by the taskbar: (left, top, right, bottom)."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            import ctypes.wintypes as wt
+            rect = wt.RECT()
+            if ctypes.windll.user32.SystemParametersInfoW(48, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+                return rect.left, rect.top, rect.right, rect.bottom
+        except Exception:
+            pass
+    return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight() - 48
+
+
+def site_url(root):
+    """The published site's address: the CNAME domain if set, else the GitHub Pages address."""
+    cname = Path(root) / "CNAME"
+    if cname.is_file():
+        domain = cname.read_text().strip()
+        if domain:
+            return f"https://{domain}/"
+    try:
+        r = subprocess.run(["git", "remote", "get-url", "origin"], cwd=root, capture_output=True, text=True,
+                           creationflags=0x08000000 if os.name == "nt" else 0)
+        m = re.search(r"github\.com[:/]([^/]+)/([^/\s]+?)(?:\.git)?\s*$", r.stdout)
+        if m:
+            user, repo = m.group(1).lower(), m.group(2)
+            return f"https://{user}.github.io/" if repo.lower() == f"{user}.github.io" else f"https://{user}.github.io/{repo}/"
+    except OSError:
+        pass
+    return None
+
+
+def already_running():
+    """If the updater is already open, tell it to show its window and return True."""
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", INSTANCE_PORT), timeout=0.5) as s:
+            s.sendall(b"show")
+        return True
+    except OSError:
+        return False
+
+
+def listen_for_second_launch(app):
+    import socket
+    srv = socket.socket()
+    try:
+        srv.bind(("127.0.0.1", INSTANCE_PORT))
+        srv.listen(1)
+    except OSError:
+        return  # the port is taken by something else: just skip this nicety
+    def run():
+        while True:
+            try:
+                conn, _ = srv.accept()
+                conn.close()
+                app.root.after(0, app.show)
+            except OSError:
+                return
+    threading.Thread(target=run, daemon=True).start()
+
+
 # ---------- One change to projects.json at a time ----------
 # Every load-change-save of the project list holds this lock, so a background task
 # (a scan, a picture update) can't write an older copy over a change you just saved.
@@ -558,6 +704,23 @@ def apply_theme(root):
     s.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG, bordercolor=BG, arrowcolor=MUTE)
     s.map("Vertical.TScrollbar", background=[("active", "#333333")])
     s.configure("TSeparator", background=LINE)
+    s.configure("Card.Vertical.TScrollbar", background="#2a2a2a", troughcolor="#1b1b1b", bordercolor="#1b1b1b",
+                arrowcolor=MUTE, lightcolor="#2a2a2a", darkcolor="#2a2a2a")
+    s.map("Card.Vertical.TScrollbar", background=[("active", "#383838")])
+
+
+def round_corners(win):
+    """Ask Windows 11 to round the window's corners (ignored on Windows 10 and elsewhere)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        win.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(win.winfo_id())
+        pref = ctypes.c_int(2)  # DWMWCP_ROUND
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(pref), ctypes.sizeof(pref))
+    except Exception:
+        pass
 
 
 def dark_titlebar(win):
@@ -580,6 +743,228 @@ def dark_titlebar(win):
             set_attr(hwnd, attr, ctypes.byref(c), ctypes.sizeof(c))
     except Exception:
         pass
+
+
+# ---------- Panel pieces (the tray panel's look, after Bambu Bar) ----------
+import tkinter.font as tkfont
+
+CARD, TILE, BTN, BTN_HI = "#1b1b1b", "#232323", "#232323", "#2e2e2e"
+GREEN, AMBER = "#3fb97a", "#e8b020"
+GREEN_TINT, AMBER_TINT, RED_TINT, RED_TINT_HI = "#16301f", "#33290f", "#3a1d1c", "#4c2523"
+PANEL_W = 392
+# Windows' own icon font (Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10)
+ICONS = {"refresh": "", "settings": "", "hide": "", "add": "", "list": "",
+         "search": "", "open": "", "globe": "", "hidden": "", "history": ""}
+PLAIN = {"refresh": "↻", "settings": "⚙", "hide": "—", "add": "+", "list": "☰",
+         "search": "⌕", "open": "↗", "globe": "○", "hidden": "◌", "history": "◷"}
+ICONS.update(left="", right="", check="", delete="")
+PLAIN.update(left="‹", right="›", check="✓", delete="✕")
+
+
+def icon_family(root):
+    fams = set(tkfont.families(root))
+    return next((f for f in ("Segoe Fluent Icons", "Segoe MDL2 Assets") if f in fams), None)
+
+
+def plain(widget, **kw):
+    """Classic Tk widgets pick up a 1px outline from the theme; panel pieces don't want it."""
+    widget.config(bd=0, highlightthickness=0, **kw)
+    return widget
+
+
+def rounded_photo(w, h, radius, fill, outline=None, scale=3):
+    """A smooth rounded rectangle (drawn 3x larger, then scaled down so the curves are clean)."""
+    im = Image.new("RGBA", (w * scale, h * scale), (0, 0, 0, 0))
+    ImageDraw.Draw(im).rounded_rectangle([0, 0, w * scale - 1, h * scale - 1], radius=radius * scale, fill=fill,
+                                         outline=outline, width=scale if outline else 0)
+    return ImageTk.PhotoImage(im.resize((w, h), Image.LANCZOS))
+
+
+def thumb_photo(path, w=104, h=78, radius=10):
+    """A project's card picture, whole, over a blurred copy of itself, with rounded corners."""
+    s = 2
+    im = Image.open(path).convert("RGB")
+    back = ImageEnhance.Brightness(ImageOps.fit(im, (w * s, h * s)).filter(ImageFilter.GaussianBlur(10))).enhance(.45)
+    im.thumbnail((w * s, h * s), Image.LANCZOS)
+    back.paste(im, ((w * s - im.width) // 2, (h * s - im.height) // 2))
+    mask = Image.new("L", (w * s, h * s), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, w * s - 1, h * s - 1], radius=radius * s, fill=255)
+    out = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
+    out.paste(back, (0, 0), mask)
+    return ImageTk.PhotoImage(out.resize((w, h), Image.LANCZOS))
+
+
+def placeholder_photo(w=104, h=78, radius=10):
+    """A dim wireframe cube, for projects without a picture."""
+    s = 3
+    im = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, w * s - 1, h * s - 1], radius=radius * s, fill=TILE)
+    cx, cy, k = w * s / 2, h * s / 2, h * s / 5
+    P = lambda x, y: (cx + x * k, cy + y * k)
+    top, l, r_, c, bl, br, b = P(0, -1.1), P(-1, -.55), P(1, -.55), P(0, 0), P(-1, .65), P(1, .65), P(0, 1.2)
+    line = dict(fill="#3d3d3d", width=2 * s)
+    d.line([top, r_, br, b, bl, l, top], joint="curve", **line)
+    d.line([l, c, r_], joint="curve", **line)
+    d.line([c, b], **line)
+    return ImageTk.PhotoImage(im.resize((w, h), Image.LANCZOS))
+
+
+class Card(tk.Frame):
+    """A rounded box. Put content in .body, whose background is the card color."""
+    def __init__(self, parent, color=CARD, radius=14, padx=14, pady=12, outline=None):
+        under = parent.cget("bg")
+        super().__init__(parent, bg=under, bd=0, highlightthickness=0)
+        self.color, self.radius, self.outline, self._drawn = color, radius, outline, None
+        self._bg = plain(tk.Label(self, bg=under))
+        self._bg.place(x=0, y=0, relwidth=1, relheight=1)
+        self.body = plain(tk.Frame(self, bg=color))
+        self.body.pack(fill="both", expand=True, padx=padx, pady=pady)
+        if Image is None:  # no Pillow: square corners
+            self.config(bg=color)
+            self._bg.config(bg=color)
+        else:
+            self.bind("<Configure>", self._draw)
+
+    def _draw(self, _=None):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4 or h < 4 or (w, h, self.color) == self._drawn:
+            return
+        self._drawn = (w, h, self.color)
+        self._img = rounded_photo(w, h, self.radius, self.color, self.outline)
+        self._bg.config(image=self._img)
+
+    def recolor(self, color):
+        self.color = color
+        stack = [self.body]
+        while stack:  # the body and everything inside it
+            w = stack.pop()
+            try:
+                w.config(bg=color)
+            except tk.TclError:
+                pass
+            stack += w.winfo_children()
+        if Image is None:
+            self.config(bg=color)
+            self._bg.config(bg=color)
+        else:
+            self._draw()
+
+
+class Pill(Card):
+    """A small rounded status label with a dot, like Bambu Bar's "Printing"."""
+    def __init__(self, parent, text="", fg=MUTE, color=TILE):
+        super().__init__(parent, color=color, radius=11, padx=10, pady=3)
+        self.dot = plain(tk.Label(self.body, text="●", fg=fg, bg=color, font=("Segoe UI", 7)))
+        self.dot.pack(side="left", padx=(0, 6))
+        self.lbl = plain(tk.Label(self.body, text=text, fg=fg, bg=color, font=("Segoe UI Semibold", 9)))
+        self.lbl.pack(side="left")
+
+    def set(self, text, fg, color):
+        if (text, fg, color) == getattr(self, "_state", None):
+            return
+        self._state = (text, fg, color)
+        self.recolor(color)
+        self.dot.config(fg=fg)
+        self.lbl.config(text=text, fg=fg)
+
+
+class RoundButton(Card):
+    """A rounded button with an optional icon, lighter while the pointer is over it."""
+    def __init__(self, parent, text, command, icon=None, ifam=None, color=BTN, hover=BTN_HI, fg=INK,
+                 radius=10, padx=12, pady=8, size=10, tip=None):
+        super().__init__(parent, color=color, radius=radius, padx=padx, pady=pady)
+        self.base, self.hover, self.command = color, hover, command
+        inner = plain(tk.Frame(self.body, bg=color))
+        inner.pack(anchor="center")
+        if icon:
+            glyph, font = (ICONS[icon], (ifam, size)) if ifam else (PLAIN[icon], ("Segoe UI Symbol", size))
+            plain(tk.Label(inner, text=glyph, font=font, fg=fg, bg=color)).pack(side="left", padx=(0, 7 if text else 0))
+        if text:
+            plain(tk.Label(inner, text=text, font=("Segoe UI Semibold", size), fg=fg, bg=color)).pack(side="left")
+        for w in (self, self._bg, self.body, inner, *inner.winfo_children()):
+            w.bind("<Enter>", lambda e: self.recolor(self.hover))
+            w.bind("<Leave>", self._leave)
+            w.bind("<Button-1>", lambda e: self.command())
+            w.config(cursor="hand2")
+
+    def _leave(self, e):
+        w = self.winfo_containing(e.x_root, e.y_root)
+        while w is not None and w is not self:
+            w = w.master
+        if w is None:  # really left, not just moved onto the label inside
+            self.recolor(self.base)
+
+
+class Link(tk.Label):
+    """Text that acts as a button, like Bambu Bar's "Open Bambu Bar" and "Quit"."""
+    def __init__(self, parent, text, command, fg=MUTE, hover=INK, **kw):
+        super().__init__(parent, text=text, fg=fg, bg=parent.cget("bg"), cursor="hand2",
+                         font=kw.pop("font", ("Segoe UI Semibold", 10)), **kw)
+        plain(self)
+        self.bind("<Enter>", lambda e: self.config(fg=hover))
+        self.bind("<Leave>", lambda e: self.config(fg=fg))
+        self.bind("<Button-1>", lambda e: command())
+
+
+class SettingsDialog(tk.Toplevel):
+    """Folders, watching and publishing, and the tools you rarely need."""
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        self.title("Settings")
+        self.resizable(False, False)
+        f = ttk.Frame(self, padding=14)
+        f.pack(fill="both", expand=True)
+        f.columnconfigure(1, weight=1)
+        for i, (label, var) in enumerate((("Portfolio folder", app.v_root), ("Projects folder", app.v_projects))):
+            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=4)
+            ttk.Entry(f, textvariable=var, width=44).grid(row=i, column=1, sticky="ew", padx=8)
+            ttk.Button(f, text="Browse", command=lambda v=var: app.browse(v)).grid(row=i, column=2)
+        ttk.Checkbutton(f, text="Watch Website Files folders for new exports", variable=app.v_on,
+                        command=app.toggle).grid(row=2, column=0, columnspan=3, sticky="w", pady=(12, 4))
+        ttk.Checkbutton(f, text="Publish with git after saving", variable=app.v_pub).grid(
+            row=3, column=0, columnspan=3, sticky="w")
+        ttk.Separator(f).grid(row=4, column=0, columnspan=3, sticky="ew", pady=12)
+        tools = ttk.Frame(f)
+        tools.grid(row=5, column=0, columnspan=3, sticky="ew")
+        ttk.Button(tools, text="Recalculate changes", command=app.recalc).pack(side="left")
+        ttk.Button(tools, text="Full log", command=app.show_log).pack(side="left", padx=6)
+        ttk.Button(tools, text="Done", style="Accent.TButton", command=self.done).pack(side="right")
+        self.protocol("WM_DELETE_WINDOW", self.done)
+        dark_titlebar(self)
+        center_on(self, app.root)
+        self.transient(app.root)
+
+    def done(self):
+        self.app.save_cfg()
+        self.destroy()
+        self.app.refresh_panel()
+
+
+class LogDialog(tk.Toplevel):
+    """Everything the updater has done since it started."""
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.title("Portfolio Updater log")
+        self.geometry("640x420")
+        box = ttk.Frame(self, padding=10)
+        box.pack(fill="both", expand=True)
+        self.text = tk.Text(box, wrap="word", font=("Consolas", 9), padx=8, pady=6)
+        sb = ttk.Scrollbar(box, orient="vertical", command=self.text.yview)
+        self.text.config(yscrollcommand=sb.set)
+        self.text.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y")
+        for when, line in app.log_lines:
+            self.add(when, line)
+        dark_titlebar(self)
+        center_on(self, app.root)
+
+    def add(self, when, line):
+        self.text.config(state="normal")
+        self.text.insert("end", f"{when:%I:%M:%S %p}  {line}\n")
+        self.text.see("end")
+        self.text.config(state="disabled")
 
 
 class Prompt(tk.Toplevel):
@@ -626,6 +1011,7 @@ class Prompt(tk.Toplevel):
         ttk.Button(b, text="Skip", command=self.destroy).pack(side="left")
         self.refresh()
         dark_titlebar(self)
+        center_on(self, app.root)
         self.transient(app.root); self.grab_set(); self.lift()
         self.attributes("-topmost", True)
         self.note.focus_set()
@@ -679,115 +1065,149 @@ class Prompt(tk.Toplevel):
 
 
 def listbox(parent, width, height, mode="browse"):
-    """A listbox with its own scrollbar, packed in a frame. Returns (frame, listbox)."""
-    box = ttk.Frame(parent)
-    lb = tk.Listbox(box, width=width, height=height, selectmode=mode, exportselection=False, activestyle="none")
-    sb = ttk.Scrollbar(box, orient="vertical", command=lb.yview)
+    """A dark list with its own scrollbar, in a frame the color of whatever it sits on.
+    Returns (frame, listbox)."""
+    under = parent.cget("bg") if isinstance(parent, (tk.Frame, tk.Toplevel, tk.Tk)) else BG
+    box = plain(tk.Frame(parent, bg=under))
+    lb = tk.Listbox(box, width=width, height=height, selectmode=mode, exportselection=False, activestyle="none",
+                    font=("Segoe UI", 10), bg=FIELD, fg=INK, selectbackground=ACCENT_DEEP, selectforeground="#ffffff",
+                    highlightthickness=1, highlightbackground=LINE, highlightcolor=LINE, bd=0, relief="flat")
+    sb = ttk.Scrollbar(box, orient="vertical", command=lb.yview, style="Card.Vertical.TScrollbar")
     lb.config(yscrollcommand=sb.set)
     lb.pack(side="left", fill="both", expand=True)
-    sb.pack(side="left", fill="y")
+    sb.pack(side="left", fill="y", padx=(2, 0))
     return box, lb
 
 
 class Manage(tk.Toplevel):
-    """Show/hide projects, edit a project's description and tags, delete windows or projects."""
+    """Show/hide projects, edit a project's title, description and tags, delete windows or
+    projects. Drawn in the same style as the tray panel: rounded cards on near-black."""
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
         self.current = app.cfg.get("last")  # the project whose details are shown below
         self.title("Manage projects")
         self.resizable(False, False)
-        pad = {"padx": 10, "pady": 4, "sticky": "w"}
+        self.configure(bg=BG)
+        fam = icon_family(self)
+        L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+        head = lambda parent, text: L(parent, text=text, fg=MUTE, font=("Segoe UI Semibold", 9))
+        hint = lambda parent, text="": L(parent, text=text, fg=MUTE, font=("Segoe UI", 8))
+        btn = lambda parent, text, cmd, icon=None, **kw: RoundButton(parent, text, cmd, icon=icon, ifam=fam, **kw)
+        row = lambda parent: plain(tk.Frame(parent, bg=parent.cget("bg")))
+        outer = plain(tk.Frame(self, bg=BG))
+        outer.pack(fill="both", expand=True, padx=16, pady=(14, 14))
 
-        # ---- Show / Hide boxes with arrows between them ----
-        sh = ttk.Frame(self)
-        sh.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
-        ttk.Label(sh, text="Show on the website", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
-        ttk.Label(sh, text="Hidden", font=("Segoe UI", 10, "bold")).grid(row=0, column=2, sticky="w")
-        box, self.show_lb = listbox(sh, 34, 12, "extended")
-        box.grid(row=1, column=0, sticky="ns")
-        arrows = ttk.Frame(sh)
-        arrows.grid(row=1, column=1, padx=10)
-        ttk.Button(arrows, text="<<", width=5, command=lambda: self.move(True)).pack(pady=(0, 30))
-        ttk.Button(arrows, text=">>", width=5, command=lambda: self.move(False)).pack()
-        box, self.hide_lb = listbox(sh, 34, 12, "extended")
-        box.grid(row=1, column=2, sticky="ns")
-        ttk.Label(sh, text="Click a project to edit it below. Select several with Ctrl or Shift, "
-                           "then use the arrows to move them.", style="Hint.TLabel").grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        # ---- header ----
+        hdr = row(outer)
+        hdr.pack(fill="x", pady=(0, 12))
+        if Image is not None:
+            self._logo = ImageTk.PhotoImage(tray_image(28))
+            L(hdr, image=self._logo).pack(side="left", padx=(0, 10))
+        L(hdr, text="Manage projects", fg=INK, font=("Segoe UI Semibold", 13)).pack(side="left")
+
+        # ---- card: on the website / hidden, with arrows between ----
+        card = Card(outer, radius=16, padx=14, pady=12)
+        card.pack(fill="x", pady=(0, 10))
+        b = card.body
+        head(b, "On the website").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        head(b, "Hidden").grid(row=0, column=2, sticky="w", pady=(0, 4))
+        box, self.show_lb = listbox(b, 32, 9, "extended")
+        box.grid(row=1, column=0, sticky="nsew")
+        arrows = row(b)
+        arrows.grid(row=1, column=1, padx=12)
+        btn(arrows, "", lambda: self.move(True), icon="left", radius=9, padx=12, pady=7).pack(pady=(0, 10))
+        btn(arrows, "", lambda: self.move(False), icon="right", radius=9, padx=12, pady=7).pack()
+        box, self.hide_lb = listbox(b, 32, 9, "extended")
+        box.grid(row=1, column=2, sticky="nsew")
+        hint(b, "Click a project to edit it below. Ctrl or Shift selects several; the arrows move them "
+                "between the lists.").grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         for lb, other in ((self.show_lb, self.hide_lb), (self.hide_lb, self.show_lb)):
             lb.bind("<<ListboxSelect>>", lambda e, lb=lb, other=other: self.picked(lb, other))
         self.show_lb.bind("<Double-Button-1>", lambda e: self.move(False))
         self.hide_lb.bind("<Double-Button-1>", lambda e: self.move(True))
 
-        ttk.Separator(self).grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        # ---- Title (what the website shows; the folder keeps its own name) ----
-        ttk.Label(self, text="Title").grid(row=2, column=0, sticky="nw", padx=10, pady=4)
-        tt = ttk.Frame(self)
-        tt.grid(row=2, column=1, **pad)
-        top_line = ttk.Frame(tt)
-        top_line.pack(anchor="w")
-        self.title_in = ttk.Entry(top_line, width=44, font=("Segoe UI", 11, "bold"))
+        # ---- card: the selected project ----
+        card = Card(outer, radius=16, padx=14, pady=12)
+        card.pack(fill="x", pady=(0, 10))
+        b = card.body
+        b.columnconfigure(1, weight=1)
+        head(b, "Title").grid(row=0, column=0, sticky="nw", pady=(6, 0), padx=(0, 14))
+        tt = row(b)
+        tt.grid(row=0, column=1, sticky="ew")
+        line = row(tt)
+        line.pack(fill="x")
+        self.title_in = ttk.Entry(line, width=36, font=("Segoe UI Semibold", 12))
         self.title_in.pack(side="left")
-        self.heading = ttk.Label(top_line, style="Hint.TLabel")  # "on the website" / "hidden"
-        self.heading.pack(side="left", padx=(8, 0))
-        self.folder_note = ttk.Label(tt, style="Hint.TLabel")
-        self.folder_note.pack(anchor="w", pady=(2, 0))
+        self.state_pill = Pill(line)  # On the website / Hidden
+        self.state_pill.pack(side="left", padx=(10, 0))
+        self.folder_note = hint(tt)
+        self.folder_note.pack(anchor="w", pady=(4, 0))
 
-        # ---- Description ----
-        ttk.Label(self, text="Project description").grid(row=3, column=0, sticky="nw", padx=10, pady=4)
-        self.desc = tk.Text(self, width=58, height=3, wrap="word")
-        self.desc.grid(row=3, column=1, **pad)
-        ttk.Label(self, text="Shown under the project's title on its card and its page.",
-                  style="Hint.TLabel").grid(row=4, column=1, padx=10, sticky="w")
+        head(b, "Description").grid(row=1, column=0, sticky="nw", pady=(14, 0))
+        dd = row(b)
+        dd.grid(row=1, column=1, sticky="ew", pady=(12, 0))
+        self.desc = tk.Text(dd, width=60, height=3, wrap="word", font=("Segoe UI", 10), padx=8, pady=6,
+                            bg=FIELD, fg=INK, insertbackground=INK, highlightthickness=1,
+                            highlightbackground=LINE, highlightcolor=ACCENT, bd=0, relief="flat")
+        self.desc.pack(fill="x")
+        hint(dd, "Shown under the title on the project's card and its page.").pack(anchor="w", pady=(4, 0))
 
-        # ---- Tags: this project's tags  <<  >>  every tag used so far ----
-        ttk.Label(self, text="Tags").grid(row=5, column=0, sticky="nw", padx=10, pady=4)
-        tf = ttk.Frame(self)
-        tf.grid(row=5, column=1, **pad)
-        ttk.Label(tf, text="This project's tags").grid(row=0, column=0, sticky="w")
-        ttk.Label(tf, text="All tags").grid(row=0, column=2, sticky="w")
-        box, self.tags = listbox(tf, 22, 6, "extended")
+        head(b, "Tags").grid(row=2, column=0, sticky="nw", pady=(14, 0))
+        tf = row(b)
+        tf.grid(row=2, column=1, sticky="w", pady=(12, 0))
+        hint(tf, "This project").grid(row=0, column=0, sticky="w", pady=(0, 3))
+        hint(tf, "All tags").grid(row=0, column=2, sticky="w", pady=(0, 3))
+        box, self.tags = listbox(tf, 22, 5, "extended")
         box.grid(row=1, column=0)
-        mid = ttk.Frame(tf)
-        mid.grid(row=1, column=1, padx=8)
-        ttk.Button(mid, text="<<", width=5, command=self.add_tags).pack(pady=(0, 16))
-        ttk.Button(mid, text=">>", width=5, command=self.remove_tags).pack()
-        box, self.all_tags = listbox(tf, 22, 6, "extended")
+        mid = row(tf)
+        mid.grid(row=1, column=1, padx=10)
+        btn(mid, "", self.add_tags, icon="left", radius=9, padx=10, pady=6).pack(pady=(0, 8))
+        btn(mid, "", self.remove_tags, icon="right", radius=9, padx=10, pady=6).pack()
+        box, self.all_tags = listbox(tf, 22, 5, "extended")
         box.grid(row=1, column=2)
         self.all_tags.bind("<Double-Button-1>", lambda e: self.add_tags())
         self.tags.bind("<Double-Button-1>", lambda e: self.remove_tags())
-        edit = ttk.Frame(tf)
-        edit.grid(row=2, column=2, sticky="w", pady=(4, 0))
-        ttk.Button(edit, text="Rename or merge...", command=self.rename_tag).pack(side="left")
-        ttk.Button(edit, text="Delete everywhere", command=self.delete_tag).pack(side="left", padx=(4, 0))
-        new = ttk.Frame(tf)
-        new.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        ttk.Label(new, text="New tag").pack(side="left")
-        self.tag_in = ttk.Entry(new, width=24)
-        self.tag_in.pack(side="left", padx=6)
+        links = row(tf)
+        links.grid(row=2, column=2, sticky="w", pady=(6, 0))
+        Link(links, "Rename or merge", self.rename_tag, font=("Segoe UI", 9)).pack(side="left")
+        Link(links, "Delete everywhere", self.delete_tag, hover=ACCENT, font=("Segoe UI", 9)).pack(side="left", padx=(12, 0))
+        new = row(tf)
+        new.grid(row=3, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.tag_in = ttk.Entry(new, width=26)
+        self.tag_in.pack(side="left", ipady=3)
         self.tag_in.bind("<Return>", lambda e: self.new_tag())
-        ttk.Button(new, text="Create and add", command=self.new_tag).pack(side="left")
-        ttk.Label(self, text="Tags appear on the project's card on the home page.",
-                  style="Hint.TLabel").grid(row=6, column=1, padx=10, sticky="w")
-        ttk.Button(self, text="Save title, description and tags", style="Accent.TButton", command=self.save_details).grid(
-            row=7, column=1, padx=10, pady=(4, 6), sticky="e")
+        btn(new, "New tag", self.new_tag, icon="add", radius=9, padx=10, pady=5, size=9).pack(side="left", padx=(8, 0))
+        hint(tf, "Tags appear on the project's card on the home page.").grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
-        # ---- Windows ----
-        ttk.Separator(self).grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        ttk.Label(self, text="Windows").grid(row=9, column=0, sticky="nw", padx=10, pady=4)
-        box, self.lb = listbox(self, 56, 5)
-        box.grid(row=9, column=1, **pad)
-        ttk.Button(self, text="Delete window", command=self.delete).grid(row=10, column=1, padx=10, pady=(2, 6), sticky="e")
+        save = row(b)
+        save.grid(row=3, column=0, columnspan=2, sticky="e", pady=(14, 0))
+        btn(save, "Save changes", self.save_details, icon="check", color=ACCENT_DEEP, hover=ACCENT, fg="#ffffff").pack()
 
-        ttk.Separator(self).grid(row=11, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        b = ttk.Frame(self)
-        b.grid(row=12, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
-        ttk.Button(b, text="Delete project", command=self.delete_project).pack(side="left")
-        ttk.Button(b, text="Close", command=self.close).pack(side="right")
+        # ---- card: 3D model windows ----
+        card = Card(outer, radius=16, padx=14, pady=12)
+        card.pack(fill="x", pady=(0, 12))
+        b = card.body
+        b.columnconfigure(0, weight=1)
+        head(b, "3D model windows").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        box, self.lb = listbox(b, 60, 4)
+        box.grid(row=1, column=0, sticky="ew")
+        btn(b, "Delete window", self.delete, icon="delete", color=RED_TINT, hover=RED_TINT_HI, fg=ACCENT,
+            size=9, padx=10, pady=6).grid(row=1, column=1, sticky="n", padx=(12, 0))
+
+        # ---- footer ----
+        foot = row(outer)
+        foot.pack(fill="x")
+        btn(foot, "Delete project", self.delete_project, icon="delete", color=RED_TINT, hover=RED_TINT_HI,
+            fg=ACCENT).pack(side="left")
+        btn(foot, "Close", self.close).pack(side="right")
+
         self.protocol("WM_DELETE_WINDOW", self.close)
+        self.bind("<Escape>", lambda e: self.close())
         self.load()
         dark_titlebar(self)
+        center_on(self, app.root)
         self.transient(app.root)
         self.grab_set()
 
@@ -1005,7 +1425,10 @@ class Manage(tk.Toplevel):
         self.tag_in.delete(0, "end")
         self.title_in.delete(0, "end")
         state = "on the website" if p and not p.get("hidden") else "hidden"
-        self.heading.config(text=f"({state})" if p else "No projects yet")
+        if p:
+            self.state_pill.set(*(("On the website", GREEN, GREEN_TINT) if not p.get("hidden") else ("Hidden", MUTE, TILE)))
+        else:
+            self.state_pill.set("No projects yet", MUTE, TILE)
         folder = Path(p["folder"]).name if p and p.get("folder") else None
         self.folder_note.config(text=f'Folder: {folder}  (the folder keeps its name; only the website shows the title)'
                                 if folder else "Shown as the project's name on its card and its page.")
@@ -1048,33 +1471,41 @@ class App:
         r = self.root = tk.Tk()
         apply_theme(r)
         r.title("Portfolio Updater")
-        r.geometry("620x580")
         self.v_root = tk.StringVar(value=self.cfg.get("root", ""))
         self.v_projects = tk.StringVar(value=self.cfg.get("projects", ""))
         self.v_on = tk.BooleanVar(value=False)
         self.v_pub = tk.BooleanVar(value=self.cfg.get("publish", True))
         self.seen, self.pending, self.baselined, self.busy = {}, {}, False, False
         self.web_dirs, self.watch_from, self.gen = [], 0.0, 0
-        f = ttk.Frame(r, padding=12)
-        f.pack(fill="both", expand=True)
-        f.columnconfigure(1, weight=1)
-        for i, (label, var) in enumerate((("Portfolio folder", self.v_root), ("Projects folder", self.v_projects))):
-            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
-            ttk.Entry(f, textvariable=var).grid(row=i, column=1, sticky="ew", padx=6)
-            ttk.Button(f, text="Browse", command=lambda v=var: self.browse(v)).grid(row=i, column=2)
-        ttk.Checkbutton(f, text="Watch Website Files folders for new exports", variable=self.v_on,
-                        command=self.toggle).grid(row=2, column=0, columnspan=2, sticky="w", pady=6)
-        ttk.Checkbutton(f, text="Publish with git after saving", variable=self.v_pub).grid(row=3, column=0, columnspan=2, sticky="w")
-        ttk.Button(f, text="Refresh", command=self.refresh).grid(row=2, column=2, sticky="ew")
-        ttk.Button(f, text="Add a version manually", command=self.manual).grid(row=3, column=2, sticky="ew")
-        ttk.Button(f, text="Manage projects", command=self.manage).grid(row=4, column=2, sticky="ew", pady=(4, 0))
-        ttk.Button(f, text="Recalculate changes", command=self.recalc).grid(row=5, column=2, sticky="ew", pady=(4, 0))
-        ttk.Button(f, text="Scan projects folder", command=self.scan).grid(row=6, column=2, sticky="ew", pady=(4, 0))
-        self.out = tk.Text(f, height=12, state="disabled", wrap="word")
-        self.out.grid(row=7, column=0, columnspan=3, sticky="nsew", pady=(10, 0))
-        f.rowconfigure(7, weight=1)
+        self.log_lines, self.log_view, self._thumb_key = [], None, None
+        self.pub_state = ("Ready", MUTE, TILE)
+        self.watching = False
+        self.tray = None
+        if pystray:
+            try:
+                self.tray = Tray(self)
+                self._icon = ImageTk.PhotoImage(tray_image(32))
+                r.iconphoto(True, self._icon)  # same cube on the window and taskbar
+            except Exception as e:
+                self.tray = None
+                r.after(600, self.log, f"Tray icon unavailable ({e}). Running as a normal window.")
+        self.build_panel()
         r.protocol("WM_DELETE_WINDOW", self.close)
+        r.bind("<Escape>", lambda e: self.close())
+        if self.tray:
+            r.overrideredirect(True)  # a borderless panel by the tray, like Bambu Bar
         dark_titlebar(r)
+        round_corners(r)
+        if not pystray:
+            # name the exact Python running this app: packages installed into a different
+            # Python on the same computer (a common mix-up) aren't visible to it
+            import sys
+            exe = Path(sys.executable)
+            if exe.name.lower() == "pythonw.exe":
+                exe = exe.with_name("python.exe")  # same Python, but shows pip's progress
+            r.after(600, self.log, "Tip: to keep the updater in the system tray, run this in PowerShell, "
+                                   f"then restart the updater:\n& \"{exe}\" -m pip install pystray pillow")
+        listen_for_second_launch(self)
         r.after(500, self.autostart)
 
     def autostart(self):
@@ -1102,11 +1533,230 @@ class App:
     def run(self):
         self.root.mainloop()
 
+    # ---------- the panel ----------
+    def build_panel(self):
+        r, fam = self.root, icon_family(self.root)
+        r.configure(bg=BG)
+        outer = plain(tk.Frame(r, bg=BG))
+        outer.pack(fill="both", expand=True, padx=14, pady=(12, 12))
+        L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+
+        # header: logo, name, watching status, and three small icon buttons
+        hdr = plain(tk.Frame(outer, bg=BG))
+        hdr.pack(fill="x", pady=(0, 10))
+        if Image is not None:
+            self._logo = ImageTk.PhotoImage(tray_image(30))
+            L(hdr, image=self._logo).pack(side="left", padx=(0, 10))
+        names = plain(tk.Frame(hdr, bg=BG))
+        names.pack(side="left")
+        L(names, text="Portfolio Updater", fg=INK, font=("Segoe UI Semibold", 12)).pack(anchor="w")
+        st = plain(tk.Frame(names, bg=BG))
+        st.pack(anchor="w")
+        self.status_dot = L(st, text="●", fg=MUTE, font=("Segoe UI", 7))
+        self.status_dot.pack(side="left", padx=(0, 5))
+        self.status_text = L(st, text="Starting...", fg=MUTE, font=("Segoe UI", 9))
+        self.status_text.pack(side="left")
+        for icon, cmd in (("hide", self.close), ("settings", self.open_settings), ("refresh", self.refresh)):
+            RoundButton(hdr, "", cmd, icon=icon, ifam=fam, color=BG, hover=BTN, fg=MUTE,
+                        radius=9, padx=8, pady=6, size=10).pack(side="right", padx=(4, 0))
+
+        # latest project: picture, publish status, title, newest version, date
+        card = Card(outer, radius=16, padx=12, pady=12)
+        card.pack(fill="x", pady=(0, 10))
+        b = card.body
+        self.thumb = L(b)
+        self.thumb.grid(row=0, column=0, rowspan=4, sticky="nw", padx=(0, 12))
+        self.pill = Pill(b)
+        self.pill.grid(row=0, column=1, sticky="w")
+        self.latest_title = L(b, fg=INK, font=("Segoe UI Semibold", 13))
+        self.latest_title.grid(row=1, column=1, sticky="w", pady=(6, 0))
+        self.latest_sub = L(b, fg=MUTE, font=("Segoe UI", 9))
+        self.latest_sub.grid(row=2, column=1, sticky="w")
+        self.latest_when = L(b, fg=MUTE, font=("Segoe UI", 9))
+        self.latest_when.grid(row=3, column=1, sticky="sw", pady=(6, 0))
+        b.columnconfigure(1, weight=1)
+
+        # three tiles, like Nozzle / Bed / Chamber
+        tiles = plain(tk.Frame(outer, bg=BG))
+        tiles.pack(fill="x", pady=(0, 10))
+        self.tile_nums = {}
+        for i, (key, icon, label) in enumerate((("shown", "globe", "On website"), ("hidden", "hidden", "Hidden"),
+                                                ("versions", "history", "Versions"))):
+            t = Card(tiles, radius=14, padx=12, pady=10)
+            t.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
+            tiles.columnconfigure(i, weight=1, uniform="tile")
+            top = plain(tk.Frame(t.body, bg=CARD))
+            top.pack(anchor="w")
+            glyph, font = (ICONS[icon], (fam, 9)) if fam else (PLAIN[icon], ("Segoe UI Symbol", 9))
+            L(top, text=glyph, fg=ACCENT, font=font).pack(side="left", padx=(0, 6))
+            L(top, text=label, fg=MUTE, font=("Segoe UI", 9)).pack(side="left")
+            self.tile_nums[key] = L(t.body, text="0", fg=INK, font=("Segoe UI Semibold", 20))
+            self.tile_nums[key].pack(anchor="w", pady=(2, 0))
+
+        # recent activity, like the AMS section: one colored dot per event
+        act = Card(outer, radius=16, padx=14, pady=10)
+        act.pack(fill="x", pady=(0, 10))
+        top = plain(tk.Frame(act.body, bg=CARD))
+        top.pack(fill="x", pady=(0, 4))
+        L(top, text="Recent activity", fg=MUTE, font=("Segoe UI Semibold", 9)).pack(side="left")
+        Link(top, "Full log", self.show_log, font=("Segoe UI", 9)).pack(side="right")
+        self.act_rows = []
+        rows = plain(tk.Frame(act.body, bg=CARD))
+        rows.pack(fill="x")
+        rows.columnconfigure(1, weight=1)
+        for i in range(5):  # always five lines, so the panel never changes height
+            dot = L(rows, text="●", fg=CARD, font=("Segoe UI", 7))
+            dot.grid(row=i, column=0, sticky="w", padx=(0, 8), pady=2)
+            txt = L(rows, text=" ", fg=INK, font=("Segoe UI", 9))
+            txt.grid(row=i, column=1, sticky="w")
+            when = L(rows, text="", fg=MUTE, font=("Segoe UI", 8), anchor="e")
+            when.grid(row=i, column=2, sticky="e", padx=(8, 0))
+            self.act_rows.append((dot, txt, when))
+
+        # big buttons, like Pause / Stop
+        acts = plain(tk.Frame(outer, bg=BG))
+        acts.pack(fill="x", pady=(0, 10))
+        for i, (text, icon, cmd, color, hover, fg) in enumerate((
+                ("Add version", "add", self.manual, RED_TINT, RED_TINT_HI, ACCENT),
+                ("Projects", "list", self.manage, BTN, BTN_HI, INK),
+                ("Scan", "search", self.scan, BTN, BTN_HI, INK))):
+            RoundButton(acts, text, cmd, icon=icon, ifam=fam, color=color, hover=hover, fg=fg).grid(
+                row=0, column=i, sticky="ew", padx=(0 if i == 0 else 8, 0))
+            acts.columnconfigure(i, weight=1, uniform="act")
+
+        # footer links, like "Open Bambu Bar" / "Quit"
+        foot = plain(tk.Frame(outer, bg=BG))
+        foot.pack(fill="x")
+        if fam:
+            L(foot, text=ICONS["open"], fg=MUTE, font=(fam, 9)).pack(side="left", padx=(2, 6))
+        Link(foot, "Open website", self.open_site).pack(side="left")
+        Link(foot, "Quit", self.quit, hover=ACCENT).pack(side="right")
+
+        r.update_idletasks()
+        r.geometry(f"{PANEL_W}x{r.winfo_reqheight()}")
+        r.resizable(False, False)
+        self.refresh_panel()
+
+    def refresh_panel(self):
+        """Bring the panel up to date: status, latest project, counts and activity."""
+        if not hasattr(self, "pill"):
+            return
+        cut = lambda s, n: s if len(s) <= n else s[:n - 1].rstrip() + "…"
+        # watching status
+        if self.watching:
+            n = len(self.web_dirs)
+            self.status_dot.config(fg=GREEN)
+            self.status_text.config(text=f"Watching {n} Website Files folder{'' if n == 1 else 's'}")
+        elif self.v_on.get():
+            self.status_dot.config(fg=AMBER)
+            self.status_text.config(text="Starting to watch...")
+        else:
+            self.status_dot.config(fg=MUTE)
+            self.status_text.config(text="Not watching for new exports")
+        self.pill.set(*self.pub_state)
+        # the project list
+        try:
+            projects = self.data()["projects"]
+        except Exception:
+            projects = []
+        shown = [p for p in projects if not p.get("hidden")]
+        self.tile_nums["shown"].config(text=str(len(shown)))
+        self.tile_nums["hidden"].config(text=str(len(projects) - len(shown)))
+        self.tile_nums["versions"].config(text=str(sum(len(p.get("versions", [])) for p in projects)))
+        when = lambda p: max([p.get("modified") or ""] + [v.get("date") or "" for v in p.get("versions", [])])
+        latest = max(shown, key=when, default=None)
+        if latest is None:
+            self.latest_title.config(text="No projects on the website yet")
+            self.latest_sub.config(text="Scan your Projects folder to add some")
+            self.latest_when.config(text="")
+        else:
+            vs = latest.get("versions", [])
+            self.latest_title.config(text=cut(latest["title"], 22))
+            self.latest_sub.config(text=cut(f"{vs[-1].get('id', '')}  {vs[-1].get('source', '')}".strip(), 32)
+                                   if vs else "No 3D models yet")
+            self.latest_when.config(text=f"Updated {self.nice_date(when(latest))}    "
+                                         f"{len(vs)} version{'' if len(vs) == 1 else 's'}")
+        self.set_thumb(latest)
+        # recent activity (newest first)
+        events = [e for e in reversed(self.log_lines) if not e[1].startswith(("Publishing", "Looking for"))][:5]
+        for i, (dot, txt, tm) in enumerate(self.act_rows):
+            if i < len(events):
+                stamp, line = events[i]
+                dot.config(fg=self.event_color(line))
+                txt.config(text=cut(line.replace("\n", " "), 40))
+                tm.config(text=f"{stamp:%I:%M %p}".lstrip("0"))
+            else:
+                dot.config(fg=CARD)
+                txt.config(text=" " if i else "Nothing yet")
+                tm.config(text="")
+
+    @staticmethod
+    def event_color(line):
+        low = line.lower()
+        if line.startswith("Published"):
+            return GREEN
+        if "failed" in low or "could not" in low or "error" in low or "not available" in low:
+            return ACCENT
+        if any(w in low for w in ("saved", "renamed", "deleted", "added", "updated", "showing", "hiding",
+                                  "removed", "is now", "new card")):
+            return "#ff938b"
+        return MUTE
+
+    @staticmethod
+    def nice_date(stamp):
+        if not stamp:
+            return ""
+        try:
+            d = datetime.fromisoformat(stamp)
+        except ValueError:
+            return stamp
+        today = date.today()
+        if d.date() == today:
+            return "today" + (f" {d:%I:%M %p}".replace(" 0", " ") if "T" in stamp else "")
+        if (today - d.date()).days == 1:
+            return "yesterday"
+        return f"{d:%b} {d.day}" + ("" if d.year == today.year else f", {d.year}")
+
+    def set_thumb(self, proj):
+        """The latest project's card picture (or a dim cube), cached until the picture changes."""
+        if Image is None:
+            return self.thumb.config(text="")
+        path = Path(self.v_root.get()) / proj["image"] if proj and proj.get("image") else None
+        try:
+            key = (str(path), path.stat().st_mtime) if path and path.is_file() else None
+        except OSError:
+            key = None
+        if key == self._thumb_key and getattr(self, "_thumb", None):
+            return
+        self._thumb_key = key
+        try:
+            self._thumb = thumb_photo(path) if key else placeholder_photo()
+        except Exception:
+            self._thumb = placeholder_photo()
+        self.thumb.config(image=self._thumb)
+
+    def open_settings(self):
+        SettingsDialog(self)
+
+    def show_log(self):
+        if self.log_view and self.log_view.winfo_exists():
+            return self.log_view.lift()
+        self.log_view = LogDialog(self)
+
+    def toggle_panel(self):
+        """Left-click on the tray icon: open the panel, or tuck it away if it's open."""
+        if self.root.state() == "normal":
+            self.close()
+        else:
+            self.show()
+
     def log(self, text):
-        self.out.config(state="normal")
-        self.out.insert("end", text + "\n")
-        self.out.see("end")
-        self.out.config(state="disabled")
+        stamp = datetime.now()
+        self.log_lines.append((stamp, text))
+        del self.log_lines[:-500]
+        if self.log_view and self.log_view.winfo_exists():
+            self.log_view.add(stamp, text)
+        self.refresh_panel()
 
     def tlog(self, text):
         """log() that is safe to call from a background thread."""
@@ -1139,7 +1789,7 @@ class App:
         if d:
             var.set(d)
 
-    def close(self):
+    def save_cfg(self):
         self.cfg.pop("watch", None)  # replaced by the Projects folder
         self.cfg.update(root=self.v_root.get(), publish=self.v_pub.get(),
                         auto=self.v_on.get(), projects=self.v_projects.get())
@@ -1148,14 +1798,96 @@ class App:
             CONFIG.write_text(json.dumps(self.cfg), "utf-8")
         except OSError:
             pass
+
+    def close(self):
+        """The window's X: with the tray icon, hide to the tray and keep watching."""
+        self.save_cfg()
+        if not self.tray:
+            return self.quit()
+        self.root.withdraw()
+        if not self.cfg.get("tray_told"):
+            self.tray.note("Still running in the tray. Right-click the icon to quit.")
+            self.cfg["tray_told"] = True
+
+    def quit(self):
+        self.save_cfg()
+        if self.tray:
+            self.tray.stop()
         self.root.destroy()
+
+    def show(self):
+        """Bring the window up in the bottom-right corner, just above the taskbar and next to
+        the tray icon, like a tray app's panel. This happens every time, whether the window was
+        hidden, minimized or already open somewhere else on the screen."""
+        r = self.root
+        if self.tray:
+            self.place_bottom_right()  # before it appears, so it shows up in the corner...
+        r.deiconify()
+        if self.tray:
+            r.after(30, self.place_bottom_right)  # ...and again once it's on screen, which Windows needs
+        r.lift()
+        r.attributes("-topmost", True)  # come in front of other windows...
+        r.after(200, lambda: r.attributes("-topmost", False))  # ...without staying pinned on top
+        r.focus_force()
+
+    def place_bottom_right(self, gap=12):
+        r = self.root
+        r.update_idletasks()
+        left, top, right, bottom = work_area(r)
+        m = re.match(r"(\d+)x(\d+)", r.geometry())  # the window's inside size
+        w, h = (int(m.group(1)), int(m.group(2))) if m else (r.winfo_width(), r.winfo_height())
+        # the title bar and borders sit outside that size; measure them once the window is up
+        border = r.winfo_rootx() - r.winfo_x()
+        title = r.winfo_rooty() - r.winfo_y()
+        if r.overrideredirect():
+            border = title = 0  # the borderless panel has no title bar or frame
+        elif not (0 <= border <= 20 and 10 <= title <= 80):
+            border, title = 8, 31  # typical Windows values, used before the window has been shown
+        if r.winfo_ismapped():  # once it's on screen, trust its real size
+            w, h = max(w, r.winfo_width()), max(h, r.winfo_height())
+        x = max(left, right - w - 2 * border - gap)
+        y = max(top, bottom - h - title - border - gap)
+        r.geometry(f"+{x}+{y}")
+        # Windows sometimes ignores Tk's move for a borderless window, so also move it directly
+        if os.name == "nt" and r.winfo_ismapped():
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.GetParent(r.winfo_id())
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)  # keep size, order, focus
+            except Exception:
+                pass
+
+    def toggle_from_tray(self):
+        self.v_on.set(not self.v_on.get())
+        self.toggle()
+
+    def open_site(self):
+        import webbrowser
+        url = site_url(self.v_root.get())
+        if url:
+            webbrowser.open(url)
+        else:
+            self.show()
+            self.log("Couldn't work out the website's address (is the portfolio folder a git repository?).")
+
+    def ask(self, path, project=None, folder=None):
+        """Open "What did you change?"; if the window was hidden in the tray, hide it again after."""
+        hidden = self.root.state() == "withdrawn"
+        if hidden:
+            self.show()  # pops up in the bottom-right corner, like the tray panel
+        else:
+            self.root.lift()
+        Prompt(self, path, project, folder)  # waits until it's answered or skipped
+        if hidden and self.tray:
+            self.root.withdraw()
 
     def data(self):
         return load_data(self.v_root.get())
 
     def ready(self):
         if not (Path(self.v_root.get()) / "index.html").exists():
-            messagebox.showwarning("Portfolio folder", "Choose the portfolio folder (the one containing index.html).")
+            messagebox.showwarning("Portfolio folder", "Choose the portfolio folder (the one containing "
+                                   "index.html) in Settings: the gear icon at the top of the panel.")
             return False
         return True
 
@@ -1167,7 +1899,10 @@ class App:
 
     def toggle(self):
         self.gen += 1  # stops any earlier watch loop
+        self.watching = False
         if not self.v_on.get():
+            if self.tray:
+                self.tray.tip("not watching")
             return self.log("Stopped watching.")
         if not self.ready() or not self.projects_ok():
             self.v_on.set(False)
@@ -1199,6 +1934,10 @@ class App:
                 if start or len(dirs) != len(self.web_dirs):
                     self.log(f"Watching {len(dirs)} Website Files folder(s).")
                 self.web_dirs = dirs
+                self.watching = True
+                if self.tray:
+                    self.tray.tip(f"watching {len(dirs)} Website Files folder(s)")
+                self.refresh_panel()  # the header's green "Watching" dot
             if start:
                 self.poll(gen)
             self.root.after(600000, self.find_dirs, gen)
@@ -1268,8 +2007,7 @@ class App:
                     if p.suffix.lower() in IMAGE_EXT:  # a picture: becomes the card picture, no questions
                         self.update_covers({proj_dir: [(s[0], p)]})
                         continue
-                    self.root.deiconify(); self.root.lift()
-                    Prompt(self, p, self.target(proj_dir), proj_dir)
+                    self.ask(p, self.target(proj_dir), proj_dir)
                 else:
                     self.pending[p] = s
         except OSError as e:
@@ -1337,19 +2075,39 @@ class App:
                 continue
             found += 1
             self.seen[p] = s
-            self.root.deiconify(); self.root.lift()
-            Prompt(self, p, proj["title"] if proj else None, proj_dir)
+            self.ask(p, proj["title"] if proj else None, proj_dir)
         if skipped:
             self.log(f"{skipped} other STEP file(s) skipped. Use 'Scan projects folder' to add files that aren't on the site yet.")
         if not found:
             self.log("Refresh: no part changes found.")
 
+    def folder_for(self, path):
+        """The project folder (a direct subfolder of the Projects folder) a file sits in,
+        or None if the file is somewhere else."""
+        pd = str(self.v_projects.get()).replace("\\", "/").rstrip("/")
+        s = str(path).replace("\\", "/")
+        if not pd or not s.lower().startswith(pd.lower() + "/"):
+            return None
+        first = s[len(pd) + 1:].split("/")[0]
+        return Path(pd) / first if first and "/" in s[len(pd) + 1:] else None
+
     def manual(self):
         if not self.ready():
             return
-        f = filedialog.askopenfilename(filetypes=[("STEP files", "*.step *.stp")])
-        if f:
-            Prompt(self, Path(f))
+        f = filedialog.askopenfilename(filetypes=[("STEP files", "*.step *.stp")],
+                                       initialdir=self.cfg.get("last_dir") or self.v_projects.get() or None)
+        if not f:
+            return
+        p = Path(f)
+        self.cfg["last_dir"] = str(p.parent)  # the next "Add a version manually" starts here
+        folder = self.folder_for(p)
+        # pick the project the same way the watcher does: by the project folder the file is in,
+        # or, for a file outside the Projects folder, by the project it was saved to before
+        project = self.target(folder) if folder else self.cfg.get("links", {}).get(str(p))
+        if folder:
+            self.log(f"{p.name} is in the {folder.name} folder"
+                     + (f", so it goes to {project}." if project else ", which has no card yet: starting a new project."))
+        Prompt(self, p, project, folder)
 
     @exclusive
     def save(self, path, choice, note, new, picture="", adopt=False, folder=None):
@@ -1388,12 +2146,23 @@ class App:
 
     def push(self, root, message):
         if not self.v_pub.get():
-            return
+            self.pub_state = ("Saved, not published", MUTE, TILE)
+            return self.refresh_panel()
         if (Path(root) / ".git").exists():
+            self.pub_state = ("Publishing", AMBER, AMBER_TINT)
             self.log("Publishing...")
-            publish(root, message, lambda t: self.root.after(0, self.log, t))
+            publish(root, message, lambda t: self.root.after(0, self.published, message, t))
         else:
+            self.pub_state = ("Not published", ACCENT, RED_TINT)
             self.log("Not published: the portfolio folder is not a git repository.")
+
+    def published(self, message, result):
+        ok = not result.startswith("Publish failed")
+        self.pub_state = ("Published", GREEN, GREEN_TINT) if ok else ("Publish failed", ACCENT, RED_TINT)
+        self.log(result)
+        # tucked away in the tray? say so with a Windows notification instead
+        if self.tray and self.root.state() == "withdrawn":
+            self.tray.note(f"{message}\n{result}" if result.startswith("Publish failed") else f"Published: {message}")
 
     @exclusive
     def recalc(self):
@@ -1668,7 +2437,14 @@ class App:
 
 if __name__ == "__main__":
     import sys
+    if already_running():  # opened twice: bring the running one forward instead
+        sys.exit(0)
     app = App()
     if "--minimized" in sys.argv:  # used by the Windows startup shortcut
-        app.root.iconify()
+        if app.tray:
+            app.root.withdraw()  # start quietly in the tray
+        else:
+            app.root.iconify()
+    elif app.tray:
+        app.root.after(50, app.show)  # opened by hand: appear in the corner by the tray icon
     app.run()
