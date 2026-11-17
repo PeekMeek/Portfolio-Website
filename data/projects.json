@@ -939,7 +939,9 @@
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\PC Case Watercooled",
       "imported": true,
-      "modified": "2026-03-30T20:18:59"
+      "modified": "2026-03-30T20:18:59",
+      "image": "projects/pc-case-watercooled/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "photoshop",
