@@ -636,13 +636,6 @@
       "versions": [
         {
           "id": "v1",
-          "date": "2025-08-18",
-          "note": "Imported from Website Files/SATA_Tray_Lock_3.stp",
-          "source": "SATA_Tray_Lock_3.stp",
-          "file": "projects/hexos-nas/sata-tray-lock-3/v1.step"
-        },
-        {
-          "id": "v1",
           "date": "2025-08-20",
           "note": "Imported from Website Files/SATA_Tray_Base.stp",
           "source": "SATA_Tray_Base.stp",
