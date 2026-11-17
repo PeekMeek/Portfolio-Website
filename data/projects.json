@@ -304,7 +304,9 @@
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed Watercooled SFF PC",
       "imported": true,
-      "modified": "2026-10-23T00:09:44"
+      "modified": "2026-10-23T00:09:44",
+      "image": "projects/3d-printed-watercooled-sff-pc/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "3d-printing",
