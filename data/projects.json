@@ -628,10 +628,45 @@
       "title": "HexOS NAS",
       "summary": "",
       "tags": [],
-      "versions": [],
+      "versions": [
+        {
+          "id": "v1",
+          "date": "2025-08-18",
+          "note": "Imported from Website Files/SATA_Tray_Lock_3.stp",
+          "source": "SATA_Tray_Lock_3.stp",
+          "file": "projects/hexos-nas/sata-tray-lock-3/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-08-20",
+          "note": "Imported from Website Files/SATA_Tray_Base.stp",
+          "source": "SATA_Tray_Base.stp",
+          "file": "projects/hexos-nas/sata-tray-base/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-08-20",
+          "note": "Imported from Website Files/SATA_Tray_Brace.stp",
+          "source": "SATA_Tray_Brace.stp",
+          "file": "projects/hexos-nas/sata-tray-brace/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-08-20",
+          "note": "Imported from Website Files/SATA_Tray_Slider.stp",
+          "source": "SATA_Tray_Slider.stp",
+          "file": "projects/hexos-nas/sata-tray-slider/v1.step"
+        },
+        {
+          "id": "v1",
+          "date": "2025-09-15",
+          "note": "Imported from Website Files/HexOS_Nas_Assembly.stp",
+          "source": "HexOS_Nas_Assembly.stp",
+          "file": "projects/hexos-nas/hexos-nas-assembly/v1.step"
+        }
+      ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\HexOS NAS",
       "imported": true,
-      "hidden": true,
       "modified": "2025-12-01T13:08:19"
     },
     {

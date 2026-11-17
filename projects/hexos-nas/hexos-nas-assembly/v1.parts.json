@@ -1,0 +1,16 @@
+{
+ "format": 2,
+ "parts": {
+  "Full_Model": "99b842fad3a033cedf3dabb8003639144da851e1",
+  "Storage_Frame": "82540cf30c08c83682668eb429b4567a2f3ce163",
+  "SATA_Tray_Lock": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (2)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (3)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (4)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (5)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (6)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (7)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "SATA_Tray_Lock (8)": "07ef5ffad41d3cf528a9e21ca2b094219a096f7a",
+  "Motherboard_Frame": "de16949bf9639cb2aac1324d619ce504477e6434"
+ }
+}
