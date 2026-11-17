@@ -741,8 +741,10 @@
     {
       "id": "magsafe-wallet",
       "title": "MagSafe Wallet",
-      "summary": "",
-      "tags": [],
+      "summary": "A compact magsafe wallet",
+      "tags": [
+        "3D Printed"
+      ],
       "versions": [
         {
           "id": "v1",
