@@ -533,7 +533,9 @@ function route() {
   window.scrollTo(0, 0);
 }
 
-fetch("data/projects.json").then(r => r.json()).then(d => {
+// "no-cache": always check GitHub for a newer project list, so renames and new versions
+// show up on the next page load instead of up to 10 minutes later.
+fetch("data/projects.json", {cache: "no-cache"}).then(r => r.json()).then(d => {
   DATA = d;
   addEventListener("hashchange", route);
   route();

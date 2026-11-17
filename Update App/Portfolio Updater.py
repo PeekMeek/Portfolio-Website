@@ -453,6 +453,34 @@ def publish(root, message, report):
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+# ---------- One change to projects.json at a time ----------
+# Every load-change-save of the project list holds this lock, so a background task
+# (a scan, a picture update) can't write an older copy over a change you just saved.
+DATA_LOCK = threading.RLock()
+
+
+def locked(fn):
+    """For background tasks: wait for the lock, then run."""
+    def run(*a, **k):
+        with DATA_LOCK:
+            return fn(*a, **k)
+    return run
+
+
+def exclusive(method):
+    """For buttons: if a background task is mid-save, say so instead of freezing the window."""
+    def run(self, *a, **k):
+        if not DATA_LOCK.acquire(blocking=False):
+            messagebox.showinfo("One moment", "The updater is still saving another change "
+                                "(see the log). Try again in a few seconds.")
+            return False
+        try:
+            return method(self, *a, **k)
+        finally:
+            DATA_LOCK.release()
+    return run
+
+
 # ---------- Dark theme (same colors as the website) ----------
 BG, PANEL, FIELD, LINE = "#121212", "#1b1b1b", "#161616", "#2c2c2c"
 INK, MUTE, ACCENT, ACCENT_DEEP = "#efe8e6", "#a69e9c", "#f47068", "#c93b37"
@@ -1165,6 +1193,7 @@ class App:
             return self.root.after(5000, self.update_covers, folders)
         root = Path(self.v_root.get())
         imported = self.cfg.setdefault("imported", {})
+        @locked
         def work():
             data, links, changed = load_data(root), self.cfg.get("links", {}), []
             for proj_dir, images in folders.items():
@@ -1289,6 +1318,7 @@ class App:
         if f:
             Prompt(self, Path(f))
 
+    @exclusive
     def save(self, path, choice, note, new, picture="", adopt=False, folder=None):
         root = Path(self.v_root.get())
         try:
@@ -1332,6 +1362,7 @@ class App:
         else:
             self.log("Not published: the portfolio folder is not a git repository.")
 
+    @exclusive
     def recalc(self):
         """Redo the change detection for every saved version (fixes versions saved
         before part fingerprints read Designcenter's AP242 geometry correctly)."""
@@ -1356,6 +1387,7 @@ class App:
         if self.ready():
             Manage(self)
 
+    @exclusive
     def remove_window(self, title, key, label):
         root = Path(self.v_root.get())
         try:
@@ -1424,6 +1456,7 @@ class App:
             show = ans
         root, links = Path(self.v_root.get()), self.cfg.get("links", {})
         imported = self.cfg.setdefault("imported", {})
+        @locked
         def work():
             data = load_data(root)
             made = models = dated = 0
@@ -1475,6 +1508,7 @@ class App:
             titles = [titles]
         root = Path(self.v_root.get())
         imported = self.cfg.setdefault("imported", {})
+        @locked
         def work():
             data, added = load_data(root), {}
             for title in titles:
@@ -1502,6 +1536,7 @@ class App:
                 after()
         self.job(work, done)
 
+    @exclusive
     def edit_tag(self, old, new):
         """Rename a tag on every project (merging it if the new name already exists),
         or remove it everywhere when new is None."""
@@ -1535,6 +1570,7 @@ class App:
         self.push(root, (f'Remove tag "{old}"' if new is None else f'Rename tag "{old}" to "{new}"'))
         return True
 
+    @exclusive
     def set_details(self, title, text, tags, new_title=None):
         """Save a project's description and tags, and optionally a new title. The title is
         only what the website shows: the project folder and the page address stay the same."""
@@ -1563,6 +1599,7 @@ class App:
                   if new_title != title else f"{new_title}: update description and tags")
         return True
 
+    @exclusive
     def remove_project(self, title):
         root = Path(self.v_root.get())
         try:
