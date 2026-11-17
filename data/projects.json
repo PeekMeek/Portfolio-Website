@@ -258,8 +258,11 @@
     {
       "id": "3d-printed-watercooled-sff-pc",
       "title": "3d Printed Watercooled SFF PC",
-      "summary": "",
-      "tags": [],
+      "summary": "Small form factor PC with 3D Printed Watercooled Components",
+      "tags": [
+        "3D Printed",
+        "Computer"
+      ],
       "versions": [
         {
           "id": "v1",
