@@ -1095,9 +1095,11 @@
     },
     {
       "id": "ryan-ellis-pc",
-      "title": "Ryan_Ellis_PC",
-      "summary": "",
-      "tags": [],
+      "title": "Copper PC",
+      "summary": "A large format PC case using copper tubes and a metal frame",
+      "tags": [
+        "Computer"
+      ],
       "versions": [
         {
           "id": "v1",
