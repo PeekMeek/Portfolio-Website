@@ -270,8 +270,11 @@ def match_project(data, links, d):
     return next((p for p in data["projects"] if p["title"].lower() == Path(d).name.lower()), None)
 
 
-def unique_id(data, title):
-    ids = {p["id"] for p in data["projects"]}
+def unique_id(data, title, skip=None):
+    # old addresses (aliases) stay reserved so they keep pointing at their project;
+    # skip: the project being renamed, which may take back one of its own old addresses
+    others = [p for p in data["projects"] if p is not skip]
+    ids = {p["id"] for p in others} | {a for p in others for a in p.get("aliases", [])}
     pid, n = slug(title), 2
     while pid in ids:
         pid = f"{slug(title)}-{n}"
@@ -318,6 +321,35 @@ def import_cover(root, proj, images, imported):
     set_cover(root, proj, fp)
     proj["image_from_folder"] = True
     return True
+
+
+def change_id(root, data, proj, title):
+    """Give a renamed project a page address that matches its new title (copper-pc for
+    "Copper PC"). Its files in the portfolio folder move along, and the old address is
+    kept as an alias so links already shared still open the project. Returns the new id."""
+    old = proj["id"]
+    if slug(title) == old:
+        return old
+    new = unique_id(data, title, skip=proj)
+    if new == old:
+        return old
+    src, dst = Path(root) / "projects" / old, Path(root) / "projects" / new
+    if src.is_dir():
+        if dst.exists():
+            return old  # something already uses that folder: keep the current address
+        shutil.move(str(src), str(dst))
+    a, b = f"projects/{old}/", f"projects/{new}/"
+    fix = lambda s: b + s[len(a):] if isinstance(s, str) and s.startswith(a) else s
+    for v in proj["versions"]:
+        if "file" in v:
+            v["file"] = fix(v["file"])
+    if proj.get("image"):
+        proj["image"] = fix(proj["image"])
+    aliases = [x for x in proj.get("aliases", []) if x != new]
+    if old not in aliases:
+        aliases.append(old)
+    proj["aliases"], proj["id"] = aliases, new
+    return new
 
 
 def slug(title):
@@ -910,7 +942,8 @@ class Manage(tk.Toplevel):
                 x["title"].lower() == title.lower() for x in self.data["projects"]):
             messagebox.showwarning("Title", f'Another project is already called "{title}". Choose a different title.', parent=self)
             return False
-        if title == p["title"] and text == (p.get("summary") or "").strip() and tags == list(p.get("tags") or []):
+        if (title == p["title"] and text == (p.get("summary") or "").strip()
+                and tags == list(p.get("tags") or []) and slug(title) == p["id"]):
             return self.app.log(f"No changes to {p['title']}.")
         if not self.app.set_details(p["title"], text, tags, title):
             return False
@@ -1579,13 +1612,17 @@ class App:
         try:
             data = load_data(root)
             proj = next(p for p in data["projects"] if p["title"] == title)
-            proj["title"] = new_title  # "folder" and "id" (the page address) are left as they are
+            old_id = proj["id"]
+            change_id(root, data, proj, new_title)  # the page address follows the title
+            proj["title"] = new_title  # the project's folder on TOAST-ARCHIVES keeps its name
             proj["summary"] = text
             proj["tags"] = tags
             save_data(root, data)
         except Exception as e:
             messagebox.showerror("Could not save", str(e))
             return False
+        if proj["id"] != old_id and new_title == title:
+            self.log(f"{title}: its page is now #/{proj['id']} (the old #/{old_id} link still works).")
         if new_title != title:
             # the updater keeps track of projects by title, so follow the rename
             links = self.cfg.get("links", {})
@@ -1593,7 +1630,9 @@ class App:
                 links[k] = new_title
             if self.cfg.get("last") == title:
                 self.cfg["last"] = new_title
-            self.log(f'Renamed "{title}" to "{new_title}" on the website.')
+            self.log(f'Renamed "{title}" to "{new_title}" on the website.'
+                     + (f" Its page is now #/{proj['id']} (the old #/{old_id} link still works)."
+                        if proj["id"] != old_id else ""))
         self.log(f"Saved {new_title}" + (f" (tags: {', '.join(tags)})." if tags else " (no tags)."))
         self.push(root, f"{new_title}: update title, description and tags"
                   if new_title != title else f"{new_title}: update description and tags")

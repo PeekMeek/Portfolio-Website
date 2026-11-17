@@ -528,7 +528,9 @@ function route() {
   wins.forEach(view => view.dispose());
   wins = [];
   const id = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
-  const p = visible().find(x => x.id === id);
+  // an old address from before a rename opens the project and switches to its new address
+  const p = visible().find(x => x.id === id) || visible().find(x => (x.aliases || []).includes(id));
+  if (p && p.id !== id) history.replaceState(null, "", "#/" + encodeURIComponent(p.id));
   p ? project(p) : home();
   window.scrollTo(0, 0);
 }
