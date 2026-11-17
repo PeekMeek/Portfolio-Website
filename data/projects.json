@@ -626,8 +626,11 @@
     {
       "id": "hexos-nas",
       "title": "HexOS NAS",
-      "summary": "",
-      "tags": [],
+      "summary": "A 3D Printed NAS computer with expandable tooless storage. Up to 9 drive bays can be seated in the system for future expansion",
+      "tags": [
+        "Computer",
+        "3D Printed"
+      ],
       "versions": [
         {
           "id": "v1",
