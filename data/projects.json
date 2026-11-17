@@ -1096,11 +1096,12 @@
       "modified": "2025-12-01T13:16:11"
     },
     {
-      "id": "ryan-ellis-pc",
+      "id": "copper-pc",
       "title": "Copper PC",
       "summary": "A large format PC case using copper tubes and a metal frame",
       "tags": [
-        "Computer"
+        "Computer",
+        "Metal"
       ],
       "versions": [
         {
@@ -1108,14 +1109,14 @@
           "date": "2026-11-17",
           "note": "Imported from Website Files/Copper_Case_Assembly.stp",
           "source": "Copper_Case_Assembly.stp",
-          "file": "projects/ryan-ellis-pc/copper-case-assembly/v1.step"
+          "file": "projects/copper-pc/copper-case-assembly/v1.step"
         },
         {
           "id": "v2",
           "date": "2026-11-17",
           "note": "Uploaded fewer files to improve load performance on the website",
           "source": "Copper_Case_Assembly.stp",
-          "file": "projects/ryan-ellis-pc/copper-case-assembly/v2.step",
+          "file": "projects/copper-pc/copper-case-assembly/v2.step",
           "changes": {
             "Copper_Case_Assembly": "modified"
           }
@@ -1124,8 +1125,11 @@
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\Ryan_Ellis_PC",
       "imported": true,
       "modified": "2026-11-17T11:16:56",
-      "image": "projects/ryan-ellis-pc/cover.png",
-      "image_from_folder": true
+      "image": "projects/copper-pc/cover.png",
+      "image_from_folder": true,
+      "aliases": [
+        "ryan-ellis-pc"
+      ]
     },
     {
       "id": "sell",
