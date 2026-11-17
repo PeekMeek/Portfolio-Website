@@ -1107,11 +1107,21 @@
           "note": "Imported from Website Files/Copper_Case_Assembly.stp",
           "source": "Copper_Case_Assembly.stp",
           "file": "projects/ryan-ellis-pc/copper-case-assembly/v1.step"
+        },
+        {
+          "id": "v2",
+          "date": "2026-11-17",
+          "note": "Uploaded fewer files to improve load performance on the website",
+          "source": "Copper_Case_Assembly.stp",
+          "file": "projects/ryan-ellis-pc/copper-case-assembly/v2.step",
+          "changes": {
+            "Copper_Case_Assembly": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\Ryan_Ellis_PC",
       "imported": true,
-      "modified": "2025-12-01T13:17:55",
+      "modified": "2026-11-17T11:16:56",
       "image": "projects/ryan-ellis-pc/cover.png",
       "image_from_folder": true
     },
