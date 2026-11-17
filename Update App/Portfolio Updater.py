@@ -451,7 +451,7 @@ def publish(root, message, report):
 
 # ---------- GUI ----------
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 
 class Prompt(tk.Toplevel):
@@ -549,99 +549,259 @@ class Prompt(tk.Toplevel):
             self.destroy()
 
 
+def listbox(parent, width, height, mode="browse"):
+    """A listbox with its own scrollbar, packed in a frame. Returns (frame, listbox)."""
+    box = ttk.Frame(parent)
+    lb = tk.Listbox(box, width=width, height=height, selectmode=mode, exportselection=False, activestyle="none")
+    sb = ttk.Scrollbar(box, orient="vertical", command=lb.yview)
+    lb.config(yscrollcommand=sb.set)
+    lb.pack(side="left", fill="both", expand=True)
+    sb.pack(side="left", fill="y")
+    return box, lb
+
+
 class Manage(tk.Toplevel):
-    """Pick a project to edit its description, delete one of its windows, or delete it."""
+    """Show/hide projects, edit a project's description and tags, delete windows or projects."""
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
+        self.current = app.cfg.get("last")  # the project whose details are shown below
         self.title("Manage projects")
         self.resizable(False, False)
         pad = {"padx": 10, "pady": 4, "sticky": "w"}
-        ttk.Label(self, text="Project").grid(row=0, column=0, sticky="nw", padx=10, pady=4)
-        top = ttk.Frame(self)
-        top.grid(row=0, column=1, **pad)
-        self.proj = ttk.Combobox(top, state="readonly", width=45)
-        self.proj.pack(anchor="w")
-        self.proj.bind("<<ComboboxSelected>>", lambda e: self.fill())
-        self.show = tk.BooleanVar(value=True)
-        self.show_box = ttk.Checkbutton(top, text="Show this project on the website", variable=self.show,
-                                        command=self.toggle_show)
-        self.show_box.pack(anchor="w", pady=(6, 0))
 
-        ttk.Label(self, text="Project description").grid(row=1, column=0, sticky="nw", padx=10, pady=4)
-        self.desc = tk.Text(self, width=50, height=4, wrap="word")
-        self.desc.grid(row=1, column=1, **pad)
+        # ---- Show / Hide boxes with arrows between them ----
+        sh = ttk.Frame(self)
+        sh.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 4))
+        ttk.Label(sh, text="Show on the website", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
+        ttk.Label(sh, text="Hidden", font=("Segoe UI", 10, "bold")).grid(row=0, column=2, sticky="w")
+        box, self.show_lb = listbox(sh, 34, 12, "extended")
+        box.grid(row=1, column=0, sticky="ns")
+        arrows = ttk.Frame(sh)
+        arrows.grid(row=1, column=1, padx=10)
+        ttk.Button(arrows, text="<<", width=5, command=lambda: self.move(True)).pack(pady=(0, 30))
+        ttk.Button(arrows, text=">>", width=5, command=lambda: self.move(False)).pack()
+        box, self.hide_lb = listbox(sh, 34, 12, "extended")
+        box.grid(row=1, column=2, sticky="ns")
+        ttk.Label(sh, text="Click a project to edit it below. Select several with Ctrl or Shift, "
+                           "then use the arrows to move them.", foreground="#666").grid(
+            row=2, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        for lb, other in ((self.show_lb, self.hide_lb), (self.hide_lb, self.show_lb)):
+            lb.bind("<<ListboxSelect>>", lambda e, lb=lb, other=other: self.picked(lb, other))
+        self.show_lb.bind("<Double-Button-1>", lambda e: self.move(False))
+        self.hide_lb.bind("<Double-Button-1>", lambda e: self.move(True))
+
+        ttk.Separator(self).grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        self.heading = ttk.Label(self, font=("Segoe UI", 11, "bold"))
+        self.heading.grid(row=2, column=0, columnspan=2, sticky="w", padx=10)
+
+        # ---- Description ----
+        ttk.Label(self, text="Project description").grid(row=3, column=0, sticky="nw", padx=10, pady=4)
+        self.desc = tk.Text(self, width=58, height=3, wrap="word")
+        self.desc.grid(row=3, column=1, **pad)
         ttk.Label(self, text="Shown under the project's title on its card and its page.",
-                  foreground="#666").grid(row=2, column=1, padx=10, sticky="w")
-
-        ttk.Label(self, text="Tags").grid(row=3, column=0, sticky="nw", padx=10, pady=4)
-        tf = ttk.Frame(self)
-        tf.grid(row=3, column=1, **pad)
-        self.tags = tk.Listbox(tf, width=28, height=5, exportselection=False)
-        self.tags.pack(side="left")
-        side = ttk.Frame(tf)
-        side.pack(side="left", padx=(8, 0), anchor="n")
-        self.tag_in = ttk.Entry(side, width=22)
-        self.tag_in.pack(fill="x")
-        self.tag_in.bind("<Return>", lambda e: self.add_tag())
-        ttk.Button(side, text="Add tag", command=self.add_tag).pack(fill="x", pady=(4, 0))
-        ttk.Button(side, text="Remove selected tag", command=self.remove_tag).pack(fill="x", pady=(4, 0))
-        ttk.Label(self, text="Tags appear on the project's card on the home page.",
                   foreground="#666").grid(row=4, column=1, padx=10, sticky="w")
+
+        # ---- Tags: this project's tags  <<  >>  every tag used so far ----
+        ttk.Label(self, text="Tags").grid(row=5, column=0, sticky="nw", padx=10, pady=4)
+        tf = ttk.Frame(self)
+        tf.grid(row=5, column=1, **pad)
+        ttk.Label(tf, text="This project's tags").grid(row=0, column=0, sticky="w")
+        ttk.Label(tf, text="All tags").grid(row=0, column=2, sticky="w")
+        box, self.tags = listbox(tf, 22, 6, "extended")
+        box.grid(row=1, column=0)
+        mid = ttk.Frame(tf)
+        mid.grid(row=1, column=1, padx=8)
+        ttk.Button(mid, text="<<", width=5, command=self.add_tags).pack(pady=(0, 16))
+        ttk.Button(mid, text=">>", width=5, command=self.remove_tags).pack()
+        box, self.all_tags = listbox(tf, 22, 6, "extended")
+        box.grid(row=1, column=2)
+        self.all_tags.bind("<Double-Button-1>", lambda e: self.add_tags())
+        self.tags.bind("<Double-Button-1>", lambda e: self.remove_tags())
+        edit = ttk.Frame(tf)
+        edit.grid(row=2, column=2, sticky="w", pady=(4, 0))
+        ttk.Button(edit, text="Rename or merge...", command=self.rename_tag).pack(side="left")
+        ttk.Button(edit, text="Delete everywhere", command=self.delete_tag).pack(side="left", padx=(4, 0))
+        new = ttk.Frame(tf)
+        new.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        ttk.Label(new, text="New tag").pack(side="left")
+        self.tag_in = ttk.Entry(new, width=24)
+        self.tag_in.pack(side="left", padx=6)
+        self.tag_in.bind("<Return>", lambda e: self.new_tag())
+        ttk.Button(new, text="Create and add", command=self.new_tag).pack(side="left")
+        ttk.Label(self, text="Tags appear on the project's card on the home page.",
+                  foreground="#666").grid(row=6, column=1, padx=10, sticky="w")
         ttk.Button(self, text="Save description and tags", command=self.save_details).grid(
-            row=5, column=1, padx=10, pady=(4, 6), sticky="e")
+            row=7, column=1, padx=10, pady=(4, 6), sticky="e")
 
-        ttk.Separator(self).grid(row=6, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
-        ttk.Label(self, text="Windows").grid(row=7, column=0, sticky="nw", padx=10, pady=4)
-        self.lb = tk.Listbox(self, width=52, height=6, exportselection=False)
-        self.lb.grid(row=7, column=1, **pad)
-        ttk.Button(self, text="Delete window", command=self.delete).grid(row=8, column=1, padx=10, pady=(2, 6), sticky="e")
+        # ---- Windows ----
+        ttk.Separator(self).grid(row=8, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        ttk.Label(self, text="Windows").grid(row=9, column=0, sticky="nw", padx=10, pady=4)
+        box, self.lb = listbox(self, 56, 5)
+        box.grid(row=9, column=1, **pad)
+        ttk.Button(self, text="Delete window", command=self.delete).grid(row=10, column=1, padx=10, pady=(2, 6), sticky="e")
 
-        ttk.Separator(self).grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        ttk.Separator(self).grid(row=11, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
         b = ttk.Frame(self)
-        b.grid(row=10, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        b.grid(row=12, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
         ttk.Button(b, text="Delete project", command=self.delete_project).pack(side="left")
-        ttk.Button(b, text="Close", command=self.destroy).pack(side="right")
+        ttk.Button(b, text="Close", command=self.close).pack(side="right")
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.load()
         self.transient(app.root)
         self.grab_set()
 
-    def toggle_show(self):
-        p = self.project()
-        if not p:
+    # ---- Show / Hide ----
+    def picked(self, lb, other):
+        sel = lb.curselection()
+        if not sel:
+            return
+        other.selection_clear(0, "end")
+        title = lb.get(sel[-1])
+        if title != self.current:
+            if not self.keep_edits():
+                return self.select_current()
+            self.current = title
+            self.fill()
+
+    def move(self, show):
+        src = self.hide_lb if show else self.show_lb
+        titles = [src.get(i) for i in src.curselection()]
+        if not titles:
+            return messagebox.showinfo("Move projects", "Select one or more projects in the "
+                                       + ("Hidden" if show else "Show") + " box first.", parent=self)
+        if not self.keep_edits():
             return
         def after():
             if self.winfo_exists():
                 self.load()
-        self.app.set_visible(p["title"], self.show.get(), after)
+        self.app.set_visible(titles, show, after)
 
-    def add_tag(self):
-        have = {t.lower() for t in self.tags.get(0, "end")}
-        for t in self.tag_in.get().split(","):  # "Bracket, PETG" adds two tags
+    # ---- Tags ----
+    def project_tags(self):
+        return list(self.tags.get(0, "end"))
+
+    def refresh_all_tags(self):
+        """Every tag used by any project (or created here), minus this project's own."""
+        mine = {t.lower() for t in self.project_tags()}
+        pool = {}
+        for p in self.data["projects"]:
+            for t in p.get("tags") or []:
+                pool.setdefault(t.lower(), t)
+        for t in self.created:
+            pool.setdefault(t.lower(), t)
+        self.all_tags.delete(0, "end")
+        for k in sorted(pool):
+            if k not in mine:
+                self.all_tags.insert("end", pool[k])
+
+    def add_tags(self):
+        picked = [self.all_tags.get(i) for i in self.all_tags.curselection()]
+        if not picked:
+            return messagebox.showinfo("Add tags", "Select one or more tags in the All tags list first.", parent=self)
+        for t in picked:
+            self.tags.insert("end", t)
+        self.refresh_all_tags()
+
+    def remove_tags(self):
+        sel = list(self.tags.curselection())
+        if not sel:
+            return messagebox.showinfo("Remove tags", "Select one or more of this project's tags first.", parent=self)
+        for i in reversed(sel):
+            self.tags.delete(i)
+        self.refresh_all_tags()
+
+    def new_tag(self):
+        have = {t.lower() for t in self.project_tags()}
+        for t in self.tag_in.get().split(","):  # "Bracket, PETG" makes two tags
             t = t.strip()
             if t and t.lower() not in have:
                 self.tags.insert("end", t)
+                self.created.append(t)
                 have.add(t.lower())
         self.tag_in.delete(0, "end")
+        self.refresh_all_tags()
 
-    def remove_tag(self):
-        sel = self.tags.curselection()
-        if not sel:
-            return messagebox.showinfo("Remove tag", "Select a tag in the list first.", parent=self)
-        self.tags.delete(sel[0])
+    def chosen_tag(self):
+        """The tag selected in All tags, or else in this project's tags."""
+        for lb in (self.all_tags, self.tags):
+            sel = lb.curselection()
+            if sel:
+                return lb.get(sel[0])
+        messagebox.showinfo("Tags", "Select a tag in either tag list first.", parent=self)
+        return None
 
-    def save_details(self):
+    def users_of(self, tag):
+        return [p["title"] for p in self.data["projects"] if tag.lower() in {t.lower() for t in p.get("tags") or []}]
+
+    def rename_tag(self):
+        old = self.chosen_tag()
+        if not old or not self.keep_edits():
+            return
+        new = simpledialog.askstring(
+            "Rename or merge tag",
+            f'Rename "{old}" to:\n\n(Type the name of an existing tag, like "3D Printed", to merge the two.)',
+            initialvalue=old, parent=self)
+        new = (new or "").strip()
+        if not new or new == old:
+            return
+        if self.app.edit_tag(old, new):
+            self.load()
+
+    def delete_tag(self):
+        tag = self.chosen_tag()
+        if not tag or not self.keep_edits():
+            return
+        users = self.users_of(tag)
+        if users and not messagebox.askyesno(
+                "Delete tag", f'Remove the tag "{tag}" from {len(users)} project(s)?\n\n' + ", ".join(users),
+                icon="warning", default="no", parent=self):
+            return
+        if not users:  # only created here and never saved
+            self.created = [t for t in self.created if t.lower() != tag.lower()]
+            return self.refresh_all_tags()
+        if self.app.edit_tag(tag, None):
+            self.load()
+
+    def edits(self):
+        """(description, tags) as they stand in the boxes."""
+        return self.desc.get("1.0", "end").strip(), self.project_tags()
+
+    def dirty(self):
+        p = self.project()
+        if not p:
+            return False
+        text, tags = self.edits()
+        return text != (p.get("summary") or "").strip() or tags != list(p.get("tags") or []) or bool(self.tag_in.get().strip())
+
+    def keep_edits(self):
+        """Before leaving a project with unsaved changes, offer to save them.
+        Returns False if the person chose to stay."""
+        if not self.dirty():
+            return True
+        ans = messagebox.askyesnocancel("Unsaved changes",
+                                        f"Save the changes to the description and tags of {self.current}?", parent=self)
+        if ans is None:
+            return False
+        if ans:
+            self.save_details(reload=False)
+        return True
+
+    def save_details(self, reload=True):
         p = self.project()
         if not p:
             return
         if self.tag_in.get().strip():
-            self.add_tag()  # a tag typed but not yet added still counts
-        text = self.desc.get("1.0", "end").strip()
-        tags = list(self.tags.get(0, "end"))
+            self.new_tag()  # a tag typed but not yet added still counts
+        text, tags = self.edits()
         if text == (p.get("summary") or "").strip() and tags == list(p.get("tags") or []):
             return self.app.log(f"No changes to the description or tags of {p['title']}.")
-        if self.app.set_details(p["title"], text, tags):
+        if self.app.set_details(p["title"], text, tags) and reload:
             self.load()
+
+    def close(self):
+        if self.keep_edits():
+            self.destroy()
 
     def delete_project(self):
         p = self.project()
@@ -658,14 +818,32 @@ class Manage(tk.Toplevel):
 
     def load(self):
         self.data = self.app.data()
-        titles = [p["title"] for p in self.data["projects"]]
-        self.proj["values"] = titles
-        if self.proj.get() not in titles:
-            self.proj.set(titles[0] if titles else "")
+        self.created = []
+        key = lambda p: p["title"].lower()
+        shown = sorted((p for p in self.data["projects"] if not p.get("hidden")), key=key)
+        hidden = sorted((p for p in self.data["projects"] if p.get("hidden")), key=key)
+        for lb, ps in ((self.show_lb, shown), (self.hide_lb, hidden)):
+            lb.delete(0, "end")
+            for p in ps:
+                lb.insert("end", p["title"])
+        titles = [p["title"] for p in shown + hidden]
+        if self.current not in titles:
+            self.current = titles[0] if titles else None
+        self.select_current()
         self.fill()
 
+    def select_current(self):
+        """Highlight the project being edited in whichever box it's in."""
+        for lb in (self.show_lb, self.hide_lb):
+            lb.selection_clear(0, "end")
+            items = lb.get(0, "end")
+            if self.current in items:
+                i = items.index(self.current)
+                lb.selection_set(i)
+                lb.see(i)
+
     def project(self):
-        return next((p for p in self.data["projects"] if p["title"] == self.proj.get()), None)
+        return next((p for p in self.data["projects"] if p["title"] == self.current), None)
 
     def fill(self):
         self.lb.delete(0, "end")
@@ -673,11 +851,13 @@ class Manage(tk.Toplevel):
         self.desc.delete("1.0", "end")
         self.tags.delete(0, "end")
         self.tag_in.delete(0, "end")
-        self.show.set(bool(p) and not p.get("hidden"))
+        state = "on the website" if p and not p.get("hidden") else "hidden"
+        self.heading.config(text=f"{p['title']}  ({state})" if p else "No projects yet")
         if p:
             self.desc.insert("1.0", p.get("summary") or "")
             for t in p.get("tags") or []:
                 self.tags.insert("end", t)
+        self.refresh_all_tags()
         self.wins = windows_of(p) if p else []
         for label, _, vs in self.wins:
             self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
@@ -1189,33 +1369,73 @@ class App:
             self.push(root, f"Scan projects folder: {made} new, {models} models")
         self.job(work, done)
 
-    def set_visible(self, title, show, after=None):
-        """Show or hide a project's card. Showing a scanned project copies in its STEP files."""
+    def set_visible(self, titles, show, after=None):
+        """Show or hide one or more projects' cards, published as one update. Showing a
+        project also brings in its Website Files picture (and, for scanned projects, its
+        STEP files)."""
+        if isinstance(titles, str):
+            titles = [titles]
         root = Path(self.v_root.get())
         imported = self.cfg.setdefault("imported", {})
         def work():
-            data = load_data(root)
-            p = next(x for x in data["projects"] if x["title"] == title)
-            if show:
-                p.pop("hidden", None)
-            else:
-                p["hidden"] = True
-            n = 0
-            if show and p.get("folder") and Path(p["folder"]).is_dir():
-                _, steps, images = scan_folder(Path(p["folder"]))
-                if p.get("imported"):
-                    n = import_models(root, p, steps, imported, self.tlog)
-                import_cover(root, p, images, imported)
+            data, added = load_data(root), {}
+            for title in titles:
+                p = next(x for x in data["projects"] if x["title"] == title)
+                if show:
+                    p.pop("hidden", None)
+                else:
+                    p["hidden"] = True
+                if show and p.get("folder") and Path(p["folder"]).is_dir():
+                    _, steps, images = scan_folder(Path(p["folder"]))
+                    if p.get("imported"):
+                        added[title] = import_models(root, p, steps, imported, self.tlog)
+                    import_cover(root, p, images, imported)
             save_data(root, data)
-            return n
-        self.log(f"Showing {title} on the website..." if show else f"Hiding {title} from the website...")
-        def done(n):
-            self.log((f"{title} is now on the website" + (f", with {n} model version(s) added." if n else "."))
-                     if show else f"{title} is now hidden from the website.")
-            self.push(root, f"{'Show' if show else 'Hide'} {title}")
+            return added
+        names = ", ".join(titles)
+        self.log(f"Showing {names} on the website..." if show else f"Hiding {names} from the website...")
+        def done(added):
+            for title in titles:
+                n = added.get(title, 0)
+                self.log((f"{title} is now on the website" + (f", with {n} model version(s) added." if n else "."))
+                         if show else f"{title} is now hidden from the website.")
+            self.push(root, f"{'Show' if show else 'Hide'} {names}"[:120])
             if after:
                 after()
         self.job(work, done)
+
+    def edit_tag(self, old, new):
+        """Rename a tag on every project (merging it if the new name already exists),
+        or remove it everywhere when new is None."""
+        root = Path(self.v_root.get())
+        try:
+            data, changed = load_data(root), []
+            for p in data["projects"]:
+                tags = p.get("tags") or []
+                if old.lower() not in {t.lower() for t in tags}:
+                    continue
+                out, seen = [], set()
+                for t in tags:
+                    if t.lower() == old.lower():
+                        if new is None:
+                            continue
+                        t = new
+                    if t.lower() not in seen:  # merging can create a duplicate: keep one
+                        seen.add(t.lower())
+                        out.append(t)
+                p["tags"] = out
+                changed.append(p["title"])
+            if changed:
+                save_data(root, data)
+        except Exception as e:
+            messagebox.showerror("Could not change tag", str(e))
+            return False
+        if not changed:
+            return True
+        what = f'Removed the tag "{old}"' if new is None else f'Renamed the tag "{old}" to "{new}"'
+        self.log(f"{what} on {len(changed)} project(s): {', '.join(changed)}.")
+        self.push(root, (f'Remove tag "{old}"' if new is None else f'Rename tag "{old}" to "{new}"'))
+        return True
 
     def set_details(self, title, text, tags):
         root = Path(self.v_root.get())
