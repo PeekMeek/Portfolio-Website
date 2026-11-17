@@ -2435,8 +2435,32 @@ class App:
         return True
 
 
+def relaunch_without_terminal():
+    """Double-clicking a .py file starts it with python.exe, which opens a terminal window.
+    In that case, start a fresh copy with pythonw.exe (Python without a window) and let this
+    one exit, which closes the terminal. Run with --console to keep the terminal, e.g. to
+    see an error message."""
+    import sys
+    exe = Path(sys.executable)
+    if os.name != "nt" or exe.name.lower() != "python.exe" or "--console" in sys.argv \
+            or os.environ.get("PORTFOLIO_UPDATER_RELAUNCHED"):
+        return False
+    quiet = exe.with_name("pythonw.exe")
+    if not quiet.exists():
+        return False
+    try:
+        subprocess.Popen([str(quiet), str(Path(__file__).resolve()), *sys.argv[1:]],
+                         env=dict(os.environ, PORTFOLIO_UPDATER_RELAUNCHED="1"),
+                         creationflags=0x00000008 | 0x00000200, close_fds=True)  # detached, own process group
+        return True
+    except OSError:
+        return False
+
+
 if __name__ == "__main__":
     import sys
+    if relaunch_without_terminal():  # the window-less copy takes over; this one (and its terminal) closes
+        sys.exit(0)
     if already_running():  # opened twice: bring the running one forward instead
         sys.exit(0)
     app = App()
