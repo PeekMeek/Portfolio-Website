@@ -40,7 +40,9 @@
           "note": "Added magnet holes for the cover and chamfers to ensure it will work on an FDM printer",
           "source": "V1_Case_Base.stp",
           "file": "projects/3d-printed-portable-pc/v1-case-base/v2.step",
-          "changes": {}
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         },
         {
           "id": "v3",
