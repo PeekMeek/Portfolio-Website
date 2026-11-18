@@ -235,10 +235,20 @@
           "changes": {
             "V1_Cover": "modified"
           }
+        },
+        {
+          "id": "v6",
+          "date": "2026-11-18",
+          "note": "Updated fastening method to better suit thickness of part",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v6.step",
+          "changes": {
+            "V1_Cover": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-17T16:12:43",
+      "modified": "2026-11-18T16:01:58",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
