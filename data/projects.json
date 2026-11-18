@@ -793,7 +793,9 @@
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\MagSafe Wallet",
       "imported": true,
-      "modified": "2025-12-01T13:09:00"
+      "modified": "2025-12-01T13:09:00",
+      "image": "projects/magsafe-wallet/cover.png",
+      "image_from_folder": true
     },
     {
       "id": "magsafe-power-bank",
