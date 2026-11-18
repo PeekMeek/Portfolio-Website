@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#121212">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Progress">
+<title>Portfolio Progress</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,500..800&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--bg:#121212;--card:#1b1b1b;--tile:#232323;--field:#161616;--note:#131313;--line:#2c2c2c;
+  --ink:#efe8e6;--soft:#c9c2c0;--mute:#a69e9c;--accent:#f47068;--deep:#c93b37;--tint:#3a1d1c;--green:#3fb97a;--gtint:#16301f;--amber:#e8b020;--atint:#33290f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Source Sans 3",system-ui,sans-serif}
+body{min-height:100dvh;padding:calc(env(safe-area-inset-top) + 12px) 16px calc(env(safe-area-inset-bottom) + 24px)}
+h1,h2,h3{font-family:Archivo,system-ui,sans-serif;font-stretch:112%;letter-spacing:-.01em;margin:0;line-height:1.15}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+main{max-width:560px;margin:0 auto}
+.hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.hdr img{width:30px;height:30px;border-radius:8px}
+.hdr h1{font-size:1.25rem;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon{all:unset;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;color:var(--mute);cursor:pointer}
+.icon:active,.icon:hover{background:var(--tile);color:var(--ink)}
+.icon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.card{background:var(--card);border-radius:18px;padding:16px;margin-bottom:12px}
+.label{font-size:.82rem;font-weight:600;color:var(--mute);margin:0 0 10px}
+.hint{font-size:.85rem;color:var(--mute);margin:6px 0 0}
+.btn{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px;
+  border-radius:14px;background:var(--tile);font-weight:600;cursor:pointer;text-align:center;white-space:nowrap}
+.btn:active{filter:brightness(1.25)}
+.btn.primary{background:var(--deep);color:#fff}
+.btn.danger{background:var(--tint);color:var(--accent)}
+.btn[disabled]{opacity:.5;pointer-events:none}
+.btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.row{display:flex;gap:10px}
+.row>.btn{flex:1}
+input[type=text],input[type=password],textarea{width:100%;background:var(--field);border:1px solid var(--line);border-radius:12px;padding:12px 14px;outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:84px;color:var(--soft)}
+.field{margin-bottom:12px}
+.field span{display:block;font-size:.82rem;color:var(--mute);margin-bottom:6px}
+ol.steps{margin:0 0 14px;padding-left:20px;color:var(--soft)}
+ol.steps li{margin-bottom:6px}
+a{color:var(--accent)}
+.plist{display:flex;flex-direction:column;gap:8px}
+.proj{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:8px;border-radius:14px;background:var(--note);cursor:pointer}
+.proj:active{background:var(--tile)}
+.proj .th{width:64px;height:48px;border-radius:10px;background:var(--tile) center/cover no-repeat;flex:none}
+.proj b{display:block;font-family:Archivo,sans-serif;font-stretch:108%;font-weight:600;font-size:1rem}
+.proj small{color:var(--mute)}
+.proj .chev{margin-left:auto;color:var(--mute);padding-right:6px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:.82rem;font-weight:600;background:var(--tile);color:var(--mute)}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.ok{background:var(--gtint);color:var(--green)}
+.pill.busy{background:var(--atint);color:var(--amber)}
+.pill.bad{background:var(--tint);color:var(--accent)}
+.preview{width:100%;border-radius:14px;display:block;margin-bottom:12px;max-height:46vh;object-fit:contain;background:var(--field)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ph{all:unset;box-sizing:border-box;display:flex;flex-direction:column;background:var(--note);border-radius:14px;overflow:hidden;cursor:pointer}
+.ph img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:var(--tile)}
+.ph div{padding:8px 10px 10px}
+.ph time{display:block;font-size:.78rem;color:var(--mute)}
+.ph p{margin:2px 0 0;font-size:.88rem;color:var(--soft);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+.sheet .panel{width:100%;max-width:560px;max-height:92dvh;overflow:auto;background:var(--card);border-radius:22px 22px 0 0;
+  padding:18px 16px calc(env(safe-area-inset-bottom) + 18px)}
+.sheet img{width:100%;border-radius:14px;display:block;margin-bottom:12px}
+.empty{color:var(--mute);margin:0}
+.msg{margin:10px 0 0;font-size:.9rem;color:var(--soft)}
+.msg.bad{color:var(--accent)}
+.spin{width:18px;height:18px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<input type="file" id="cam" accept="image/*" capture="environment" hidden>
+<input type="file" id="lib" accept="image/*" hidden>
+
+<script>
+// ---------------------------------------------------------------------------
+// Portfolio Progress: adds progress photos to projects by committing straight to
+// the GitHub repo that hosts the site. No server: the phone talks to GitHub's API
+// with a personal access token that is stored only on this phone.
+// Photos go to projects/<id>/progress/, their list to data/progress.json (a file
+// only this app writes, so it never collides with the desktop updater).
+// ---------------------------------------------------------------------------
+const $ = s => document.querySelector(s);
+const app = $("#app");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const ICON = {
+  back: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
+  gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>',
+  camera: '<svg viewBox="0 0 24 24"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>',
+  image: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 9"/></svg>',
+  up: '<svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>',
+};
+
+// ---- settings kept on this phone only ----
+const store = {
+  get(k) { try { return localStorage.getItem("pp_" + k) || ""; } catch { return ""; } },
+  set(k, v) { try { v ? localStorage.setItem("pp_" + k, v) : localStorage.removeItem("pp_" + k); } catch {} },
+};
+function guessRepo() {  // peekmeek.github.io/Portfolio-Website/upload/ -> peekmeek / Portfolio-Website
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/i);
+  if (!m) return {owner: "", repo: ""};
+  const first = location.pathname.split("/").filter(Boolean)[0];
+  return {owner: m[1], repo: first && first !== "upload" ? first : `${m[1]}.github.io`};
+}
+const S = {
+  owner: store.get("owner") || guessRepo().owner,
+  repo: store.get("repo") || guessRepo().repo,
+  token: store.get("token"),
+  branch: "", head: "", projects: [], progress: {projects: {}},
+  view: "list", pid: null, pending: null, status: null,
+};
+
+// ---- GitHub ----
+class GhError extends Error { constructor(status, text) { super(text); this.status = status; } }
+async function gh(path, opts = {}) {
+  let r;
+  try {
+    r = await fetch(`https://api.github.com${path}`, {...opts, cache: "no-store", headers: {
+      Authorization: `Bearer ${S.token}`, Accept: opts.accept || "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28", ...(opts.body ? {"Content-Type": "application/json"} : {})}});
+  } catch { throw new GhError(0, "No connection to GitHub. Check your internet and try again."); }
+  if (!r.ok) throw new GhError(r.status, await r.text());
+  if (r.status === 204) return null;
+  return opts.raw ? r.text() : r.json();
+}
+const R = () => `/repos/${encodeURIComponent(S.owner)}/${encodeURIComponent(S.repo)}`;
+function explain(e) {
+  if (e.status === 0) return e.message;
+  if (e.status === 401) return "GitHub didn't accept the access token. Check it was copied in full, or make a new one (it may have expired).";
+  if (e.status === 403 || e.status === 404) return "This token can't write to the repository. Make a token for this repository with Contents: Read and write.";
+  if (e.status === 409 || e.status === 422) return "The website changed while uploading. Please try again.";
+  return `GitHub said: ${String(e.message).slice(0, 160)}`;
+}
+async function readFile(path, ref) {
+  try { return await gh(`${R()}/contents/${path}?ref=${ref}`, {accept: "application/vnd.github.raw+json", raw: true}); }
+  catch (e) { if (e.status === 404) return null; throw e; }
+}
+async function loadAll() {
+  const info = await gh(R());
+  if (!info.permissions || !info.permissions.push) throw new GhError(403, "no push");
+  S.branch = info.default_branch;
+  S.head = (await gh(`${R()}/git/ref/heads/${S.branch}`)).object.sha;
+  const pj = await readFile("data/projects.json", S.head);
+  S.projects = pj ? (JSON.parse(pj).projects || []) : [];
+  const pr = await readFile("data/progress.json", S.head);
+  S.progress = pr ? JSON.parse(pr) : {projects: {}};
+  if (!S.progress.projects) S.progress.projects = {};
+}
+// One commit with every change: new/removed files plus the updated data/progress.json.
+// If the site changed in the meantime (e.g. the desktop updater published), start over on top of it.
+async function commit(message, change) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const head = (await gh(`${R()}/git/ref/heads/${S.branch}`)).object.sha;
+    const base = await gh(`${R()}/git/commits/${head}`);
+    const raw = await readFile("data/progress.json", head);
+    const progress = raw ? JSON.parse(raw) : {projects: {}};
+    if (!progress.projects) progress.projects = {};
+    const files = change(progress);  // edits progress in place, returns [{path, sha|null}]
+    const pjBlob = await gh(`${R()}/git/blobs`, {method: "POST",
+      body: JSON.stringify({content: JSON.stringify(progress, null, 2) + "\n", encoding: "utf-8"})});
+    const tree = await gh(`${R()}/git/trees`, {method: "POST", body: JSON.stringify({base_tree: base.tree.sha, tree: [
+      ...files.map(f => ({path: f.path, mode: "100644", type: "blob", sha: f.sha})),
+      {path: "data/progress.json", mode: "100644", type: "blob", sha: pjBlob.sha}]})});
+    const c = await gh(`${R()}/git/commits`, {method: "POST",
+      body: JSON.stringify({message, tree: tree.sha, parents: [head]})});
+    try {
+      await gh(`${R()}/git/refs/heads/${S.branch}`, {method: "PATCH", body: JSON.stringify({sha: c.sha, force: false})});
+      S.head = c.sha;
+      S.progress = progress;
+      return;
+    } catch (e) { if (e.status !== 422 || attempt === 2) throw e; }  // someone else committed first: retry
+  }
+}
+
+// ---- photos: shrink on the phone before uploading ----
+function loadImage(src) {
+  return new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = src; });
+}
+async function shrink(file, max = 2000, quality = .85) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);  // browsers apply the photo's rotation when drawing it
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const cv = document.createElement("canvas");
+    cv.width = Math.round(img.naturalWidth * k);
+    cv.height = Math.round(img.naturalHeight * k);
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    return await new Promise(ok => cv.toBlob(ok, "image/jpeg", quality));
+  } finally { URL.revokeObjectURL(url); }
+}
+const toBase64 = blob => new Promise((ok, fail) => {
+  const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = fail; r.readAsDataURL(blob);
+});
+const rawUrl = path => `https://raw.githubusercontent.com/${S.owner}/${S.repo}/${S.head}/${path}`;
+const siteUrl = path => "../" + path;
+const photosOf = pid => (S.progress.projects[pid] || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+const niceDate = iso => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleDateString(undefined, {month: "short", day: "numeric", year: "numeric"}); };
+const project = () => S.projects.find(p => p.id === S.pid);
+
+// ---- screens ----
+function header(title, back) {
+  return `<div class="hdr">
+    ${back ? `<button class="icon" id="back" aria-label="Back">${ICON.back}</button>` : '<img src="icon-192.png" alt="">'}
+    <h1>${esc(title)}</h1>
+    ${S.token ? `<button class="icon" id="reload" aria-label="Refresh">${ICON.refresh}</button>
+    <button class="icon" id="gear" aria-label="Settings">${ICON.gear}</button>` : ""}</div>`;
+}
+function wireHeader() {
+  const b = $("#back"); if (b) b.onclick = () => { S.view = "list"; S.pending = null; S.status = null; render(); };
+  const r = $("#reload"); if (r) r.onclick = () => start();
+  const g = $("#gear"); if (g) g.onclick = settingsSheet;
+}
+
+function setupView(msg) {
+  const g = guessRepo();
+  app.innerHTML = header("Connect to GitHub") + `
+  <div class="card">
+    <p class="label">One-time setup</p>
+    <ol class="steps">
+      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub's new token page</a> (sign in if asked).</li>
+      <li>Name it "Portfolio Progress" and pick an expiration.</li>
+      <li>Under <b>Repository access</b>, choose <b>Only select repositories</b> and pick <b>${esc(S.repo || g.repo || "your portfolio repo")}</b>.</li>
+      <li>Under <b>Permissions</b>, set <b>Contents</b> to <b>Read and write</b>.</li>
+      <li>Click <b>Generate token</b>, copy it, and paste it below.</li>
+    </ol>
+    <label class="field"><span>GitHub user</span><input type="text" id="owner" value="${esc(S.owner)}" autocapitalize="off" autocorrect="off"></label>
+    <label class="field"><span>Repository</span><input type="text" id="repo" value="${esc(S.repo)}" autocapitalize="off" autocorrect="off"></label>
+    <label class="field"><span>Access token</span><input type="password" id="token" placeholder="github_pat_..." autocomplete="off"></label>
+    <button class="btn primary" id="connect" style="width:100%">Connect</button>
+    <p class="msg ${msg ? "bad" : ""}" id="msg">${esc(msg || "The token is saved on this phone only. It never goes on the website.")}</p>
+  </div>`;
+  wireHeader();
+  $("#connect").onclick = async () => {
+    S.owner = $("#owner").value.trim(); S.repo = $("#repo").value.trim(); S.token = $("#token").value.trim();
+    if (!S.owner || !S.repo || !S.token) { $("#msg").className = "msg bad"; $("#msg").textContent = "Fill in all three boxes."; return; }
+    $("#connect").innerHTML = '<span class="spin"></span>Checking'; $("#connect").setAttribute("disabled", "");
+    try {
+      await loadAll();
+      store.set("owner", S.owner); store.set("repo", S.repo); store.set("token", S.token);
+      S.view = "list"; render();
+    } catch (e) { S.token = ""; setupView(explain(e)); }
+  };
+}
+
+function listView() {
+  const count = p => (S.progress.projects[p.id] || []).length;
+  const item = p => `<button class="proj" data-id="${esc(p.id)}">
+      <span class="th" style="${p.image ? `background-image:url('${esc(siteUrl(p.image))}')` : ""}"></span>
+      <span><b>${esc(p.title)}</b><small>${count(p) ? `${count(p)} progress photo${count(p) === 1 ? "" : "s"}` : "No progress photos yet"}</small></span>
+      <span class="chev">&#8250;</span></button>`;
+  const shown = S.projects.filter(p => !p.hidden), hidden = S.projects.filter(p => p.hidden);
+  app.innerHTML = header("Progress") + `
+    <div class="card"><p class="label">On the website</p>
+      <div class="plist">${shown.map(item).join("") || '<p class="empty">No projects on the website yet.</p>'}</div></div>
+    ${hidden.length ? `<div class="card"><p class="label">Hidden</p><div class="plist">${hidden.map(item).join("")}</div>
+      <p class="hint">Photos you add to a hidden project appear on the website once you show it.</p></div>` : ""}`;
+  wireHeader();
+  app.querySelectorAll(".proj").forEach(b => b.onclick = () => { S.pid = b.dataset.id; S.view = "project"; render(); });
+}
+
+function pill() {
+  const s = S.status;
+  if (!s) return "";
+  return `<span class="pill ${s.kind}">${esc(s.text)}</span>${s.detail ? `<p class="msg ${s.kind === "bad" ? "bad" : ""}">${esc(s.detail)}</p>` : ""}`;
+}
+
+function projectView() {
+  const p = project();
+  if (!p) { S.view = "list"; return render(); }
+  const photos = photosOf(p.id);
+  const pend = S.pending;
+  app.innerHTML = header(p.title, true) + `
+    <div class="card">
+      <p class="label">Add a progress photo</p>
+      ${pend ? `<img class="preview" src="${pend.url}" alt="Photo to upload">
+        <textarea id="cap" placeholder="Caption (optional): what changed?">${esc(pend.caption || "")}</textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="cancel">Cancel</button>
+          <button class="btn primary" id="upload">${ICON.up}Upload</button></div>`
+      : `<div class="row">
+          <button class="btn primary" id="take">${ICON.camera}Take photo</button>
+          <button class="btn" id="pick">${ICON.image}Choose photo</button></div>`}
+      <div style="margin-top:12px">${pill()}</div>
+    </div>
+    <div class="card"><p class="label">Progress photos (newest first)</p>
+      ${photos.length ? `<div class="grid">${photos.map(ph => `<button class="ph" data-id="${esc(ph.id)}">
+          <img src="${esc(rawUrl(ph.image))}" alt="${esc(ph.caption || "Progress photo")}" loading="lazy">
+          <div><time>${niceDate(ph.date)}</time>${ph.caption ? `<p>${esc(ph.caption)}</p>` : ""}</div></button>`).join("")}</div>`
+      : '<p class="empty">None yet. Your first photo starts the timeline on the project page.</p>'}
+    </div>`;
+  wireHeader();
+  if (pend) {
+    $("#cap").oninput = e => pend.caption = e.target.value;
+    $("#cancel").onclick = () => { URL.revokeObjectURL(pend.url); S.pending = null; S.status = null; render(); };
+    $("#upload").onclick = upload;
+  } else {
+    $("#take").onclick = () => $("#cam").click();
+    $("#pick").onclick = () => $("#lib").click();
+  }
+  app.querySelectorAll(".ph").forEach(b => b.onclick = () => photoSheet(b.dataset.id));
+}
+
+function render() {
+  if (!S.token) return setupView();
+  (S.view === "project" ? projectView : listView)();
+}
+
+// ---- actions ----
+for (const inp of [$("#cam"), $("#lib")]) {
+  inp.onchange = () => {
+    const f = inp.files && inp.files[0];
+    inp.value = "";
+    if (!f) return;
+    if (S.pending) URL.revokeObjectURL(S.pending.url);
+    S.pending = {file: f, url: URL.createObjectURL(f), caption: ""};
+    S.status = null;
+    render();
+  };
+}
+
+async function upload() {
+  const p = project(), pend = S.pending;
+  if (!p || !pend) return;
+  pend.caption = ($("#cap") || {}).value || pend.caption || "";
+  const btn = $("#upload");
+  btn.innerHTML = '<span class="spin"></span>Uploading'; btn.setAttribute("disabled", ""); $("#cancel").setAttribute("disabled", "");
+  S.status = {kind: "busy", text: "Uploading"}; $("#upload").parentElement.nextElementSibling.innerHTML = pill();
+  try {
+    const jpg = await shrink(pend.file);
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, "-") + "-" + Math.random().toString(36).slice(2, 6);
+    const path = `projects/${p.id}/progress/${stamp}.jpg`;
+    const blob = await gh(`${R()}/git/blobs`, {method: "POST", body: JSON.stringify({content: await toBase64(jpg), encoding: "base64"})});
+    const entry = {id: stamp, image: path, caption: pend.caption.trim(), date: now.toISOString()};
+    await commit(`${p.title}: progress photo${entry.caption ? " - " + entry.caption.slice(0, 60) : ""}`, prog => {
+      (prog.projects[p.id] = prog.projects[p.id] || []).push(entry);
+      return [{path, sha: blob.sha}];
+    });
+    URL.revokeObjectURL(pend.url);
+    S.pending = null;
+    S.status = {kind: "ok", text: "Published", detail: "It will appear on the project page in a minute or two."};
+  } catch (e) {
+    S.status = {kind: "bad", text: "Upload failed", detail: explain(e)};
+  }
+  render();
+}
+
+function sheet(html) {
+  const el = document.createElement("div");
+  el.className = "sheet";
+  el.innerHTML = `<div class="panel" role="dialog" aria-modal="true">${html}</div>`;
+  el.onclick = e => { if (e.target === el) el.remove(); };
+  document.body.appendChild(el);
+  return el;
+}
+
+function photoSheet(id) {
+  const p = project(), ph = (S.progress.projects[p.id] || []).find(x => x.id === id);
+  if (!ph) return;
+  const el = sheet(`<img src="${esc(rawUrl(ph.image))}" alt="">
+    <p class="label">${niceDate(ph.date)}</p>
+    <textarea id="ecap" placeholder="Caption">${esc(ph.caption || "")}</textarea>
+    <div class="row" style="margin-top:12px">
+      <button class="btn danger" id="del">${ICON.trash}Delete</button>
+      <button class="btn primary" id="save">Save caption</button></div>
+    <button class="btn" id="close" style="margin-top:10px;width:100%">Close</button>
+    <p class="msg" id="smsg"></p>`);
+  const busy = (b, text) => { b.innerHTML = `<span class="spin"></span>${text}`; el.querySelectorAll(".btn").forEach(x => x.setAttribute("disabled", "")); };
+  const fail = e => { el.querySelector("#smsg").className = "msg bad"; el.querySelector("#smsg").textContent = explain(e);
+    el.querySelectorAll(".btn").forEach(x => x.removeAttribute("disabled")); };
+  el.querySelector("#close").onclick = () => el.remove();
+  el.querySelector("#save").onclick = async e => {
+    const cap = el.querySelector("#ecap").value.trim();
+    busy(e.currentTarget, "Saving");
+    try {
+      await commit(`${p.title}: edit progress photo caption`, prog => {
+        const x = (prog.projects[p.id] || []).find(y => y.id === id); if (x) x.caption = cap; return [];
+      });
+      el.remove(); S.status = {kind: "ok", text: "Caption saved"}; render();
+    } catch (err) { fail(err); }
+  };
+  el.querySelector("#del").onclick = async e => {
+    if (!confirm("Delete this progress photo from the website?")) return;
+    busy(e.currentTarget, "Deleting");
+    try {
+      await commit(`${p.title}: remove progress photo`, prog => {
+        prog.projects[p.id] = (prog.projects[p.id] || []).filter(y => y.id !== id);
+        if (!prog.projects[p.id].length) delete prog.projects[p.id];
+        return [{path: ph.image, sha: null}];  // removes the picture file too
+      });
+      el.remove(); S.status = {kind: "ok", text: "Photo deleted"}; render();
+    } catch (err) { fail(err); }
+  };
+}
+
+function settingsSheet() {
+  const el = sheet(`<p class="label">Connected to</p>
+    <p style="margin:0 0 14px"><b>${esc(S.owner)}/${esc(S.repo)}</b> <span class="hint">(${esc(S.branch || "main")})</span></p>
+    <p class="hint" style="margin-bottom:14px">Your access token is saved on this phone only. Disconnecting forgets it here; you can also delete it on GitHub under Settings, Developer settings, Personal access tokens.</p>
+    <button class="btn danger" id="out" style="width:100%">Disconnect this phone</button>
+    <button class="btn" id="close" style="margin-top:10px;width:100%">Close</button>`);
+  el.querySelector("#close").onclick = () => el.remove();
+  el.querySelector("#out").onclick = () => { store.set("token", ""); S.token = ""; el.remove(); render(); };
+}
+
+async function start() {
+  if (!S.token) return render();
+  app.innerHTML = header("Progress") + '<div class="card"><span class="pill busy">Loading projects</span></div>';
+  try { await loadAll(); render(); }
+  catch (e) {
+    if (e.status === 401 || e.status === 403) { S.token = ""; store.set("token", ""); return setupView(explain(e)); }
+    app.innerHTML = header("Progress") + `<div class="card"><span class="pill bad">Couldn't load</span><p class="msg bad">${esc(explain(e))}</p>
+      <button class="btn" id="again" style="margin-top:12px">Try again</button></div>`;
+    wireHeader(); $("#again").onclick = start;
+  }
+}
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+start();
+</script>
+</body>
+</html>

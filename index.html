@@ -82,6 +82,22 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .tl b{font-size:1.1rem;margin-right:10px}
 .tl time{font-size:.85rem;color:var(--mute)}
 .tl span{display:block;margin-top:2px}
+/* progress photos, uploaded from the phone app; newest first */
+.progress{margin-top:64px;padding-top:28px;border-top:1px solid var(--line)}
+.progress h2{font-size:clamp(1.6rem,3vw,2.1rem)}
+.progress .sub{color:var(--mute);margin:8px 0 0}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px;margin-top:22px}
+.pitem{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+.pitem button{all:unset;cursor:zoom-in;display:block;aspect-ratio:4/3;background:var(--well)}
+.pitem button:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.pitem img{width:100%;height:100%;object-fit:cover;display:block}
+.pitem .pmeta{padding:12px 14px 14px}
+.pitem time{display:block;font-size:.85rem;color:var(--mute)}
+.pitem p{margin:4px 0 0;white-space:pre-line}
+.lightbox{position:fixed;inset:0;z-index:50;background:rgba(10,10,10,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;cursor:zoom-out}
+.lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.lightbox p{margin:0;max-width:70ch;text-align:center;color:var(--ink)}
+.lightbox time{color:var(--mute);font-size:.9rem}
 @media (max-width:1000px){.wins{grid-template-columns:minmax(0,1fr)}.win:only-child .work{grid-template-columns:minmax(0,1fr)}.win:only-child .tl{position:static}}
 </style>
 </head>
@@ -102,7 +118,7 @@ const PLACEHOLDER = '<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M32 6 
 const app = document.getElementById("app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cache = new Map();
-let DATA, occt, wins = [];
+let DATA, PROGRESS = {projects: {}}, occt, wins = [];
 
 async function getOcct() {
   if (!occt) occt = await occtimportjs({locateFile: f => OCCT_BASE + f});
@@ -520,8 +536,49 @@ function project(p) {
   app.innerHTML = `<a class="back" href="#/">All projects</a>
   <div class="phead"><h1>${esc(p.title)}</h1>${p.summary ? `<p>${esc(p.summary)}</p>` : ""}</div>
   ${gs.length ? `<div class="wins">${gs.map(g => g.assembly ? assemblyHtml(g) : partHtml(g)).join("")}</div>`
-    : '<p class="meta">3D models for this project are on the way.</p>'}`;
+    : '<p class="meta">3D models for this project are on the way.</p>'}
+  ${progressHtml(p)}`;
   app.querySelectorAll(".win").forEach((sec, k) => gs[k].assembly ? makeAssembly(sec, gs[k]) : makePart(sec, gs[k]));
+  app.querySelectorAll(".pitem button").forEach(b => b.onclick = () => enlarge(b.dataset.src, b.dataset.cap, b.dataset.date));
+}
+
+// ---- Progress photos (added from the phone app; stored in data/progress.json) ----
+function photosOf(p) {
+  const all = PROGRESS.projects || {};
+  const list = [p.id, ...(p.aliases || [])].flatMap(k => all[k] || []);
+  return list.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));  // newest first
+}
+
+function niceDate(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? esc(iso) : d.toLocaleDateString(undefined, {year: "numeric", month: "short", day: "numeric"});
+}
+
+function progressHtml(p) {
+  const photos = photosOf(p);
+  if (!photos.length) return "";
+  return `<section class="progress" aria-labelledby="progress-h"><h2 id="progress-h">Progress</h2>
+    <p class="sub">${photos.length} photo${photos.length === 1 ? "" : "s"} from the build, newest first.</p>
+    <div class="pgrid">${photos.map(ph => `<figure class="pitem" style="margin:0">
+      <button data-src="${esc(ph.image)}" data-cap="${esc(ph.caption || "")}" data-date="${esc(niceDate(ph.date))}"
+        aria-label="Enlarge photo${ph.caption ? ": " + esc(ph.caption) : ""}"><img src="${esc(ph.image)}" alt="${esc(ph.caption || "Progress photo")}" loading="lazy"></button>
+      <figcaption class="pmeta"><time datetime="${esc(ph.date)}">${niceDate(ph.date)}</time>${ph.caption ? `<p>${esc(ph.caption)}</p>` : ""}</figcaption>
+    </figure>`).join("")}</div></section>`;
+}
+
+function enlarge(src, cap, date) {
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "Progress photo");
+  box.tabIndex = -1;
+  box.innerHTML = `<img src="${esc(src)}" alt="${esc(cap || "Progress photo")}">${cap ? `<p>${esc(cap)}</p>` : ""}<time>${esc(date)}</time>`;
+  const close = () => { box.remove(); removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  box.onclick = close;
+  addEventListener("keydown", onKey);
+  document.body.appendChild(box);
+  box.focus();
 }
 
 function route() {
@@ -537,8 +594,12 @@ function route() {
 
 // "no-cache": always check GitHub for a newer project list, so renames and new versions
 // show up on the next page load instead of up to 10 minutes later.
-fetch("data/projects.json", {cache: "no-cache"}).then(r => r.json()).then(d => {
+Promise.all([
+  fetch("data/projects.json", {cache: "no-cache"}).then(r => r.json()),
+  fetch("data/progress.json", {cache: "no-cache"}).then(r => r.ok ? r.json() : {projects: {}}).catch(() => ({projects: {}})),
+]).then(([d, prog]) => {
   DATA = d;
+  PROGRESS = prog && prog.projects ? prog : {projects: {}};
   addEventListener("hashchange", route);
   route();
 }).catch(() => {

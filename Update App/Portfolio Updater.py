@@ -9,12 +9,29 @@ Run with Windows Python 3 (tkinter is included). No extra packages needed.
 The app copies the file into projects/<project>/, detects which parts changed
 since the previous version, and updates data/projects.json.
 """
-import hashlib, json, os, re, shutil, subprocess, threading, time
+import hashlib, json, os, re, shutil, subprocess, threading, time, uuid
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "portfolio_updater" / "config.json"
+NOTES_FILE = CONFIG.with_name("notes.json")  # private notes, kept on this computer only
+NOTE_PICS = CONFIG.with_name("note_pictures")  # pictures pasted into notes (also private)
+
+
+def load_notes():
+    try:
+        return json.loads(NOTES_FILE.read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_notes(notes):
+    try:
+        NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        NOTES_FILE.write_text(json.dumps(notes, indent=1, ensure_ascii=False), "utf-8")
+    except OSError:
+        pass
 NEW = "+ New project"
 
 
@@ -323,6 +340,51 @@ def import_cover(root, proj, images, imported):
     return True
 
 
+def pull_latest(root):
+    """Bring in what the phone app published (progress photos) before changing files it also
+    writes, so the two never overwrite each other. Quietly does nothing without git or a network."""
+    if not (Path(root) / ".git").exists():
+        return
+    try:
+        subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=root, capture_output=True, text=True,
+                       timeout=30, creationflags=0x08000000 if os.name == "nt" else 0)
+    except Exception:
+        pass
+
+
+def progress_edit(root, change):
+    """Load data/progress.json, let change() edit it, save it if anything changed."""
+    f = Path(root) / "data" / "progress.json"
+    if not f.is_file():
+        return
+    try:
+        d = json.loads(f.read_text("utf-8"))
+    except ValueError:
+        return
+    if change(d.setdefault("projects", {})):
+        f.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", "utf-8")
+
+
+def move_progress(root, old, new):
+    """A project's page address changed: its progress photos (and their paths) follow."""
+    def change(projects):
+        items = projects.pop(old, None)
+        if items is None:
+            return False
+        a, b = f"projects/{old}/", f"projects/{new}/"
+        for it in items:
+            if str(it.get("image", "")).startswith(a):
+                it["image"] = b + it["image"][len(a):]
+        projects.setdefault(new, []).extend(items)
+        return True
+    progress_edit(root, change)
+
+
+def drop_progress(root, pid):
+    """A project was deleted: forget its progress photos (the files went with its folder)."""
+    progress_edit(root, lambda projects: projects.pop(pid, None) is not None)
+
+
 def change_id(root, data, proj, title):
     """Give a renamed project a page address that matches its new title (copper-pc for
     "Copper PC"). Its files in the portfolio folder move along, and the old address is
@@ -337,7 +399,7 @@ def change_id(root, data, proj, title):
     if src.is_dir():
         if dst.exists():
             return old  # something already uses that folder: keep the current address
-        shutil.move(str(src), str(dst))
+        shutil.move(str(src), str(dst))  # progress photos in projects/<id>/progress move along
     a, b = f"projects/{old}/", f"projects/{new}/"
     fix = lambda s: b + s[len(a):] if isinstance(s, str) and s.startswith(a) else s
     for v in proj["versions"]:
@@ -349,6 +411,7 @@ def change_id(root, data, proj, title):
     if old not in aliases:
         aliases.append(old)
     proj["aliases"], proj["id"] = aliases, new
+    move_progress(root, old, new)
     return new
 
 
@@ -465,7 +528,7 @@ def publish(root, message, report):
         def git(*args):
             return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, creationflags=flags)
         try:
-            for args in (("add", "-A"), ("commit", "-m", message), ("pull", "--rebase"), ("push",)):
+            for args in (("add", "-A"), ("commit", "-m", message), ("pull", "--rebase", "--autostash"), ("push",)):
                 r = git(*args)
                 if r.returncode and args[0] != "commit":  # commit exits 1 when nothing changed
                     detail = (r.stderr.strip() or r.stdout.strip())[:300]
@@ -488,9 +551,9 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 # ---------- System tray (needs: py -m pip install pystray pillow) ----------
 try:
     import pystray
-    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps, ImageTk
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageGrab, ImageOps, ImageTk
 except ImportError:  # still works as a normal window without them
-    pystray = Image = ImageDraw = ImageEnhance = ImageFilter = ImageOps = ImageTk = None
+    pystray = Image = ImageDraw = ImageEnhance = ImageFilter = ImageGrab = ImageOps = ImageTk = None
 
 INSTANCE_PORT = 47613  # lets a second launch bring the running updater forward instead
 
@@ -752,6 +815,9 @@ CARD, TILE, BTN, BTN_HI = "#1b1b1b", "#232323", "#232323", "#2e2e2e"
 GREEN, AMBER = "#3fb97a", "#e8b020"
 GREEN_TINT, AMBER_TINT, RED_TINT, RED_TINT_HI = "#16301f", "#33290f", "#3a1d1c", "#4c2523"
 PANEL_W = 392
+NOTE_BG = "#131313"  # notes sit a shade darker than their card
+NOTE_INK = "#c9c2c0"  # note text: a little grayer than titles
+NOTE_HINT = "Add a note and press Enter (Ctrl+V pastes a picture)"
 # Windows' own icon font (Segoe Fluent Icons on Windows 11, Segoe MDL2 Assets on Windows 10)
 ICONS = {"refresh": "", "settings": "", "hide": "", "add": "", "list": "",
          "search": "", "open": "", "globe": "", "hidden": "", "history": ""}
@@ -759,6 +825,9 @@ PLAIN = {"refresh": "↻", "settings": "⚙", "hide": "—", "add": "+", "list":
          "search": "⌕", "open": "↗", "globe": "○", "hidden": "◌", "history": "◷"}
 ICONS.update(left="", right="", check="", delete="")
 PLAIN.update(left="‹", right="›", check="✓", delete="✕")
+ICONS["attach"] = ""
+PLAIN["attach"] = "+"
+ICONS["down"], ICONS["up"] = "", ""
 
 
 def icon_family(root):
@@ -905,6 +974,214 @@ class Link(tk.Label):
         self.bind("<Enter>", lambda e: self.config(fg=hover))
         self.bind("<Leave>", lambda e: self.config(fg=fg))
         self.bind("<Button-1>", lambda e: command())
+
+
+def save_note_picture(img):
+    """Store a pasted picture with the notes. Very large pictures are scaled down to keep
+    the notes folder small. Returns the file name."""
+    NOTE_PICS.mkdir(parents=True, exist_ok=True)
+    img = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+    img.thumbnail((2400, 2400), Image.LANCZOS)
+    name = f"{uuid.uuid4().hex[:12]}.png"
+    img.save(NOTE_PICS / name, optimize=True)
+    return name
+
+
+class PictureViewer(tk.Toplevel):
+    """A note's picture, large, centered on screen. Click it or press Esc to close."""
+    def __init__(self, master, path):
+        super().__init__(master)
+        self.title(Path(path).name)
+        self.configure(bg=BG)
+        self.resizable(False, False)
+        im = Image.open(path)
+        left, top, right, bottom = work_area(self)
+        im.thumbnail((int((right - left) * .8), int((bottom - top) * .8)), Image.LANCZOS)
+        self._img = ImageTk.PhotoImage(im)
+        pic = plain(tk.Label(self, image=self._img, bg=BG, cursor="hand2"))
+        pic.pack(padx=12, pady=(12, 6))
+        plain(tk.Label(self, text="Click or press Esc to close", bg=BG, fg=MUTE, font=("Segoe UI", 8))).pack(pady=(0, 8))
+        self.update_idletasks()
+        w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        self.geometry(f"+{left + (right - left - w) // 2}+{top + (bottom - top - h) // 2}")
+        dark_titlebar(self)
+        # Manage projects holds the keyboard and mouse while it's open: borrow them, then hand back
+        self._prev = self.grab_current()
+        self.grab_set()
+        for wdg in (self, pic):
+            wdg.bind("<Button-1>", lambda e: self.close())
+        self.bind("<Escape>", lambda e: self.close())
+        self.focus_force()
+
+    def close(self):
+        prev = self._prev
+        self.destroy()
+        if prev is not None:
+            try:
+                prev.grab_set()
+            except tk.TclError:
+                pass
+
+
+def note_row(parent, n, on_delete, wrap, thumb, pics):
+    """One note: a darker rounded box with a red bullet, an optional picture (click to
+    enlarge), the text, its date underneath, and an x to delete it."""
+    L = lambda p, **kw: plain(tk.Label(p, bg=p.cget("bg"), **{"anchor": "w", **kw}))
+    c = Card(parent, color=NOTE_BG, radius=10, padx=10, pady=6)
+    c.pack(fill="x", pady=(0, 6))
+    L(c.body, text="●", fg=ACCENT, font=("Segoe UI", 7)).pack(side="left", anchor="n", pady=(5, 0), padx=(0, 8))
+    Link(c.body, "✕", on_delete, hover=ACCENT, font=("Segoe UI", 9)).pack(side="right", anchor="n", padx=(10, 0))
+    pic = NOTE_PICS / n["image"] if n.get("image") else None
+    if pic is not None and pic.is_file() and Image is not None:
+        try:
+            photo = thumb_photo(pic, *thumb, radius=8)
+            pics.append(photo)  # keep a reference, or Tk forgets the picture
+            t = L(c.body, image=photo, cursor="hand2")
+            t.pack(side="left", anchor="n", padx=(0, 10))
+            t.bind("<Button-1>", lambda e: PictureViewer(parent.winfo_toplevel(), pic))
+        except Exception:
+            pass
+    words = plain(tk.Frame(c.body, bg=NOTE_BG))
+    words.pack(side="left", fill="x", expand=True)
+    if n.get("text"):
+        L(words, text=n["text"], fg=NOTE_INK, font=("Segoe UI", 10), wraplength=wrap, justify="left").pack(anchor="w", fill="x")
+    L(words, text=App.nice_date(n.get("at", "")), fg=MUTE, font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+    return c
+
+
+def delete_note(app, key, i):
+    """Remove note i of a project, and its picture."""
+    notes = app.notes.get(key, [])
+    if not 0 <= i < len(notes):
+        return
+    gone = notes.pop(i)
+    if gone.get("image"):
+        try:
+            (NOTE_PICS / gone["image"]).unlink()
+        except OSError:
+            pass
+    if not notes:
+        app.notes.pop(key, None)
+    save_notes(app.notes)
+
+
+def wheel_scrolls(canvas):
+    """The mouse wheel scrolls this list wherever the pointer is over it."""
+    wheel = lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, "units")
+    stack = [canvas]
+    while stack:
+        w = stack.pop()
+        w.bind("<MouseWheel>", wheel)
+        stack += w.winfo_children()
+
+
+class NotesList(tk.Frame):
+    """A project's private notes as darker rounded boxes, oldest at the top and newest at the
+    bottom, in a scrolling area of fixed height. Each note has a date and an x to delete it."""
+    def __init__(self, parent, app, height=128, wrap=430, empty="No notes yet.", thumb=(72, 54)):
+        bg = parent.cget("bg")
+        super().__init__(parent, bg=bg, bd=0, highlightthickness=0)
+        self.app, self.wrap, self.empty, self.key, self._sig = app, wrap, empty, None, None
+        self.thumb, self._pics = thumb, []
+        self.canvas = plain(tk.Canvas(self, bg=bg, height=height))
+        sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview, style="Card.Vertical.TScrollbar")
+        self.canvas.config(yscrollcommand=sb.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y", padx=(4, 0))
+        self.inner = plain(tk.Frame(self.canvas, bg=bg))
+        self._win = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self.inner.bind("<Configure>", lambda e: self.canvas.config(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+
+    def show(self, key, force=False):
+        notes = self.app.notes.get(key, []) if key else []
+        sig = (key, json.dumps(notes))
+        if sig == self._sig and not force:
+            return  # nothing changed: don't redraw (the panel refreshes often)
+        self._sig, self.key = sig, key
+        for w in self.inner.winfo_children():
+            w.destroy()
+        self._pics = []
+        L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+        if not notes:
+            L(self.inner, text=self.empty, fg=MUTE, font=("Segoe UI", 9)).pack(anchor="w", pady=4)
+        for i, n in enumerate(notes):
+            note_row(self.inner, n, lambda i=i: self.delete(i), self.wrap, self.thumb, self._pics)
+        wheel_scrolls(self.canvas)
+        self.after(30, lambda: self.canvas.yview_moveto(1.0))  # show the newest
+
+    def delete(self, i):
+        delete_note(self.app, self.key, i)
+        self.show(self.key, force=True)
+        self.app.notes_changed()
+
+
+class ProjectPicker(tk.Toplevel):
+    """The dropdown under the panel's project card: pick which project it shows, or
+    "Latest update" to follow whichever project changed last."""
+    def __init__(self, app, anchor):
+        super().__init__(app.root)
+        self.app = app
+        self.overrideredirect(True)
+        self.configure(bg=BG)
+        try:
+            projects = app.data()["projects"]
+        except Exception:
+            projects = []
+        shown = sorted((p for p in projects if not p.get("hidden")), key=App.updated_of, reverse=True)
+        pinned = app.cfg.get("panel_project")
+        if pinned not in {p["id"] for p in shown}:
+            pinned = None
+        card = Card(self, radius=14, padx=8, pady=8, outline=LINE)
+        card.pack(fill="both", expand=True)
+        L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+        L(card.body, text="Show in the panel", fg=MUTE, font=("Segoe UI Semibold", 9)).pack(fill="x", padx=8, pady=(2, 6))
+        cut = lambda t, n: t if len(t) <= n else t[:n - 1].rstrip() + "…"
+        choices = [(None, "Latest update", "Follows whichever project changed last")]
+        choices += [(p["id"], p["title"], f"Updated {App.nice_date(App.updated_of(p))}") for p in shown[:14]]
+        for pid, title, sub in choices:
+            r = plain(tk.Frame(card.body, bg=CARD, cursor="hand2"))
+            r.pack(fill="x")
+            tick = L(r, text="✓" if pid == pinned else "", fg=ACCENT, font=("Segoe UI Semibold", 10), width=2)
+            tick.pack(side="left", padx=(6, 2), pady=5)
+            words = plain(tk.Frame(r, bg=CARD))
+            words.pack(side="left", fill="x", expand=True, pady=4)
+            L(words, text=cut(title, 30), fg=INK, font=("Segoe UI Semibold" if pid == pinned else "Segoe UI", 10)).pack(anchor="w")
+            L(words, text=sub, fg=MUTE, font=("Segoe UI", 8)).pack(anchor="w")
+            if pid is None and len(choices) > 1:  # a thin line between "Latest update" and the projects
+                plain(tk.Frame(card.body, bg=LINE, height=1)).pack(fill="x", padx=8, pady=4)
+            parts = [r, tick, words, *words.winfo_children()]
+            for w in parts:
+                w.config(cursor="hand2")
+                w.bind("<Enter>", lambda e, parts=parts: [x.config(bg=TILE) for x in parts])
+                w.bind("<Leave>", lambda e, parts=parts: [x.config(bg=CARD) for x in parts])
+                w.bind("<Button-1>", lambda e, pid=pid: self.choose(pid))
+        # just below the card, the same width (or above it if there's no room below)
+        self.update_idletasks()
+        w, h = anchor.winfo_width(), self.winfo_reqheight()
+        x, y = anchor.winfo_rootx(), anchor.winfo_rooty() + anchor.winfo_height() + 6
+        left, top, right, bottom = work_area(self)
+        if y + h > bottom:
+            y = max(top, anchor.winfo_rooty() - h - 6)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+        round_corners(self)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<FocusOut>", lambda e: self.after(120, self._lost_focus))
+        self.lift()
+        self.focus_force()
+
+    def _lost_focus(self):
+        if self.winfo_exists() and self.focus_get() is None:  # clicked somewhere else
+            self.destroy()
+
+    def choose(self, pid):
+        if pid:
+            self.app.cfg["panel_project"] = pid
+        else:
+            self.app.cfg.pop("panel_project", None)
+        self.app.save_cfg()
+        self.destroy()
+        self.app.refresh_panel()
 
 
 class SettingsDialog(tk.Toplevel):
@@ -1126,6 +1403,39 @@ class Manage(tk.Toplevel):
             lb.bind("<<ListboxSelect>>", lambda e, lb=lb, other=other: self.picked(lb, other))
         self.show_lb.bind("<Double-Button-1>", lambda e: self.move(False))
         self.hide_lb.bind("<Double-Button-1>", lambda e: self.move(True))
+
+        # ---- card: notes for the selected project (private, newest at the bottom) ----
+        card = Card(outer, radius=16, padx=14, pady=12)
+        card.pack(fill="x", pady=(0, 10))
+        b = card.body
+        top = row(b)
+        top.pack(fill="x")
+        self.notes_for = head(top, "Notes")
+        self.notes_for.pack(side="left")
+        hint(top, "Private: kept on this computer, not on the website").pack(side="right")
+        self.notes_list = NotesList(b, app, height=128, wrap=430,
+                                    empty="No notes yet. Type one below and press Enter.")
+        self.notes_list.pack(fill="x", pady=(8, 8))
+        box = Card(b, color=FIELD, radius=12, padx=12, pady=6, outline=LINE)
+        box.pack(fill="x")
+        self.pending_pic = None  # a pasted picture waiting for Enter
+        self.pic_chip = row(box.body)  # its little preview + x, shown only while one is waiting
+        self.pic_chip_img = L(self.pic_chip)
+        self.pic_chip_img.pack(side="left")
+        Link(self.pic_chip, "\u2715", self.drop_picture, hover=ACCENT, font=("Segoe UI", 9)).pack(
+            side="left", anchor="n", padx=(4, 10))
+        self.clip_btn = Link(box.body, ICONS["attach"] if fam else "+", self.attach_file,
+                             font=((fam, 11) if fam else ("Segoe UI", 11)))
+        self.clip_btn.pack(side="right", padx=(8, 0))
+        self.note_in = plain(tk.Entry(box.body, bg=FIELD, fg=MUTE, insertbackground=INK, relief="flat",
+                                      font=("Segoe UI", 10)))
+        self.note_in.pack(side="left", fill="x", expand=True, ipady=3)
+        self.note_in.bind("<Control-v>", self.paste_picture)
+        self.note_in.bind("<Control-V>", self.paste_picture)
+        self.note_in.insert(0, NOTE_HINT)
+        self.note_in.bind("<FocusIn>", lambda e: self.note_focus(True))
+        self.note_in.bind("<FocusOut>", lambda e: self.note_focus(False))
+        self.note_in.bind("<Return>", lambda e: self.add_note())
 
         # ---- card: the selected project ----
         card = Card(outer, radius=16, padx=14, pady=12)
@@ -1373,6 +1683,7 @@ class Manage(tk.Toplevel):
 
     def close(self):
         if self.keep_edits():
+            self.drop_picture()  # a picture pasted but never added
             self.destroy()
 
     def delete_project(self):
@@ -1417,6 +1728,92 @@ class Manage(tk.Toplevel):
     def project(self):
         return next((p for p in self.data["projects"] if p["title"] == self.current), None)
 
+    # ---- notes ----
+    def note_focus(self, focused):
+        """The grey "Add a note..." hint inside the box, gone while you type."""
+        if focused and self.note_in.cget("fg") == MUTE:
+            self.note_in.delete(0, "end")
+            self.note_in.config(fg=INK)
+        elif not focused and not self.note_in.get():
+            self.note_in.insert(0, NOTE_HINT)
+            self.note_in.config(fg=MUTE)
+
+    def paste_picture(self, e=None):
+        """Ctrl+V in the note box: a copied picture (or picture file) becomes the note's picture.
+        Ordinary copied text pastes as usual."""
+        if ImageGrab is None:
+            return None
+        try:
+            clip = ImageGrab.grabclipboard()
+        except Exception:
+            return None
+        img = clip if Image is not None and isinstance(clip, Image.Image) else None
+        if img is None and isinstance(clip, list):  # files copied in File Explorer
+            for f in clip:
+                if Path(f).suffix.lower() in IMAGE_EXT:
+                    try:
+                        img = Image.open(f)
+                        break
+                    except Exception:
+                        pass
+        if img is None:
+            return None  # not a picture: let the text paste happen
+        self.attach_picture(img)
+        return "break"
+
+    def attach_file(self):
+        f = filedialog.askopenfilename(parent=self, filetypes=[("Pictures", " ".join("*" + x for x in IMAGE_EXT))])
+        if f:
+            try:
+                self.attach_picture(Image.open(f))
+            except Exception as e:
+                messagebox.showerror("Picture", f"Couldn't open that picture: {e}", parent=self)
+
+    def attach_picture(self, img):
+        self.drop_picture()  # one picture per note: a new paste replaces the waiting one
+        self.pending_pic = save_note_picture(img)
+        self._chip = thumb_photo(NOTE_PICS / self.pending_pic, 44, 33, radius=6)
+        self.pic_chip_img.config(image=self._chip)
+        self.pic_chip.pack(side="left", before=self.note_in)
+        self.note_in.focus_set()
+        self.note_focus(True)
+
+    def drop_picture(self):
+        """Remove the waiting picture (the x on its preview)."""
+        if self.pending_pic:
+            try:
+                (NOTE_PICS / self.pending_pic).unlink()
+            except OSError:
+                pass
+        self.pending_pic = None
+        self.pic_chip.pack_forget()
+
+    def note_key(self):
+        p = self.project()
+        return p["id"] if p else None
+
+    def show_notes(self):
+        p = self.project()
+        self.notes_for.config(text=f"Notes for {p['title']}" if p else "Notes")
+        self.notes_list.show(self.note_key())
+
+    def add_note(self):
+        text = "" if self.note_in.cget("fg") == MUTE else self.note_in.get().strip()
+        key = self.note_key()
+        if not key or not (text or self.pending_pic):
+            return "break"
+        note = {"text": text, "at": datetime.now().isoformat(timespec="seconds")}
+        if self.pending_pic:
+            note["image"] = self.pending_pic
+            self.pending_pic = None  # it belongs to the note now
+            self.pic_chip.pack_forget()
+        self.app.notes.setdefault(key, []).append(note)
+        save_notes(self.app.notes)
+        self.note_in.delete(0, "end")
+        self.show_notes()
+        self.app.notes_changed()
+        return "break"
+
     def fill(self):
         self.lb.delete(0, "end")
         p = self.project()
@@ -1443,6 +1840,7 @@ class Manage(tk.Toplevel):
             self.lb.insert("end", f"{label}   ({len(vs)} version{'' if len(vs) == 1 else 's'})")
         if p and not self.wins:
             self.lb.insert("end", "(no 3D models yet)")
+        self.show_notes()
 
     def delete(self):
         sel = self.lb.curselection()
@@ -1478,6 +1876,7 @@ class App:
         self.seen, self.pending, self.baselined, self.busy = {}, {}, False, False
         self.web_dirs, self.watch_from, self.gen = [], 0.0, 0
         self.log_lines, self.log_view, self._thumb_key = [], None, None
+        self.notes = load_notes()
         self.pub_state = ("Ready", MUTE, TILE)
         self.watching = False
         self.tray = None
@@ -1549,7 +1948,18 @@ class App:
             L(hdr, image=self._logo).pack(side="left", padx=(0, 10))
         names = plain(tk.Frame(hdr, bg=BG))
         names.pack(side="left")
-        L(names, text="Portfolio Updater", fg=INK, font=("Segoe UI Semibold", 12)).pack(anchor="w")
+        tl = plain(tk.Frame(names, bg=BG))
+        tl.pack(anchor="w")
+        self.title_lbl = L(tl, text="Portfolio Updater", fg=INK, font=("Segoe UI Semibold", 12), cursor="hand2")
+        self.title_lbl.pack(side="left")
+        self.chev = (ICONS["down"], ICONS["up"]) if fam else ("\u25be", "\u25b4")
+        self.title_chev = L(tl, text=self.chev[0], fg=MUTE, font=(fam, 8) if fam else ("Segoe UI Symbol", 9), cursor="hand2")
+        self.title_chev.pack(side="left", padx=(6, 0), pady=(3, 0))
+        for w in (self.title_lbl, self.title_chev):
+            w.bind("<Button-1>", lambda e: self.toggle_view())
+            w.bind("<Enter>", lambda e: self.title_chev.config(fg=ACCENT))
+            w.bind("<Leave>", lambda e: self.title_chev.config(fg=MUTE))
+        self.view = "dash"
         st = plain(tk.Frame(names, bg=BG))
         st.pack(anchor="w")
         self.status_dot = L(st, text="●", fg=MUTE, font=("Segoe UI", 7))
@@ -1560,8 +1970,11 @@ class App:
             RoundButton(hdr, "", cmd, icon=icon, ifam=fam, color=BG, hover=BTN, fg=MUTE,
                         radius=9, padx=8, pady=6, size=10).pack(side="right", padx=(4, 0))
 
+        self.dash = plain(tk.Frame(outer, bg=BG))
+        self.dash.pack(fill="both", expand=True)
+
         # latest project: picture, publish status, title, newest version, date
-        card = Card(outer, radius=16, padx=12, pady=12)
+        card = Card(self.dash, radius=16, padx=12, pady=12)
         card.pack(fill="x", pady=(0, 10))
         b = card.body
         self.thumb = L(b)
@@ -1574,10 +1987,31 @@ class App:
         self.latest_sub.grid(row=2, column=1, sticky="w")
         self.latest_when = L(b, fg=MUTE, font=("Segoe UI", 9))
         self.latest_when.grid(row=3, column=1, sticky="sw", pady=(6, 0))
+        self.card_mode = L(b, fg=MUTE, font=(fam, 10) if fam else ("Segoe UI Symbol", 10))
+        self.card_mode.grid(row=0, column=2, sticky="ne")
+        self.fam = fam
+        self.latest_card = card
+        stack = [card]
+        while stack:  # the whole card is one big button
+            w = stack.pop()
+            w.bind("<Button-1>", lambda e: self.pick_project())
+            w.config(cursor="hand2")
+            stack += w.winfo_children()
         b.columnconfigure(1, weight=1)
 
+        # notes for the project shown above (the same list as in Manage projects)
+        nc = Card(self.dash, radius=16, padx=14, pady=10)
+        nc.pack(fill="x", pady=(0, 10))
+        top = plain(tk.Frame(nc.body, bg=CARD))
+        top.pack(fill="x", pady=(0, 6))
+        self.panel_notes_for = L(top, text="Notes", fg=MUTE, font=("Segoe UI Semibold", 9))
+        self.panel_notes_for.pack(side="left")
+        self.panel_notes = NotesList(nc.body, self, height=96, wrap=180, thumb=(56, 42),
+                                     empty="No notes for this project yet. Add them in Projects.")
+        self.panel_notes.pack(fill="x")
+
         # three tiles, like Nozzle / Bed / Chamber
-        tiles = plain(tk.Frame(outer, bg=BG))
+        tiles = plain(tk.Frame(self.dash, bg=BG))
         tiles.pack(fill="x", pady=(0, 10))
         self.tile_nums = {}
         for i, (key, icon, label) in enumerate((("shown", "globe", "On website"), ("hidden", "hidden", "Hidden"),
@@ -1594,7 +2028,7 @@ class App:
             self.tile_nums[key].pack(anchor="w", pady=(2, 0))
 
         # recent activity, like the AMS section: one colored dot per event
-        act = Card(outer, radius=16, padx=14, pady=10)
+        act = Card(self.dash, radius=16, padx=14, pady=10)
         act.pack(fill="x", pady=(0, 10))
         top = plain(tk.Frame(act.body, bg=CARD))
         top.pack(fill="x", pady=(0, 4))
@@ -1614,7 +2048,7 @@ class App:
             self.act_rows.append((dot, txt, when))
 
         # big buttons, like Pause / Stop
-        acts = plain(tk.Frame(outer, bg=BG))
+        acts = plain(tk.Frame(self.dash, bg=BG))
         acts.pack(fill="x", pady=(0, 10))
         for i, (text, icon, cmd, color, hover, fg) in enumerate((
                 ("Add version", "add", self.manual, RED_TINT, RED_TINT_HI, ACCENT),
@@ -1625,15 +2059,37 @@ class App:
             acts.columnconfigure(i, weight=1, uniform="act")
 
         # footer links, like "Open Bambu Bar" / "Quit"
-        foot = plain(tk.Frame(outer, bg=BG))
+        foot = plain(tk.Frame(self.dash, bg=BG))
         foot.pack(fill="x")
         if fam:
             L(foot, text=ICONS["open"], fg=MUTE, font=(fam, 9)).pack(side="left", padx=(2, 6))
         Link(foot, "Open website", self.open_site).pack(side="left")
         Link(foot, "Quit", self.quit, hover=ACCENT).pack(side="right")
 
+        # ---- the All notes view (shown instead of the dashboard) ----
+        self.notes_view = plain(tk.Frame(outer, bg=BG))
+        allc = Card(self.notes_view, radius=16, padx=14, pady=12)
+        allc.pack(fill="both", expand=True)
+        top = plain(tk.Frame(allc.body, bg=CARD))
+        top.pack(fill="x", pady=(0, 8))
+        self.all_count = L(top, text="", fg=MUTE, font=("Segoe UI Semibold", 9))
+        self.all_count.pack(side="left")
+        Link(top, "Back", self.toggle_view, font=("Segoe UI", 9)).pack(side="right")
+        wrap = plain(tk.Frame(allc.body, bg=CARD))
+        wrap.pack(fill="both", expand=True)
+        self.all_canvas = plain(tk.Canvas(wrap, bg=CARD, height=200))
+        sb = ttk.Scrollbar(wrap, orient="vertical", command=self.all_canvas.yview, style="Card.Vertical.TScrollbar")
+        self.all_canvas.config(yscrollcommand=sb.set)
+        self.all_canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="left", fill="y", padx=(4, 0))
+        self.all_inner = plain(tk.Frame(self.all_canvas, bg=CARD))
+        self._all_win = self.all_canvas.create_window(0, 0, window=self.all_inner, anchor="nw")
+        self.all_inner.bind("<Configure>", lambda e: self.all_canvas.config(scrollregion=self.all_canvas.bbox("all")))
+        self.all_canvas.bind("<Configure>", lambda e: self.all_canvas.itemconfigure(self._all_win, width=e.width))
+
         r.update_idletasks()
-        r.geometry(f"{PANEL_W}x{r.winfo_reqheight()}")
+        self.dash_h = r.winfo_reqheight()  # the dashboard's height; All notes can grow taller
+        r.geometry(f"{PANEL_W}x{self.dash_h}")
         r.resizable(False, False)
         self.refresh_panel()
 
@@ -1663,8 +2119,12 @@ class App:
         self.tile_nums["shown"].config(text=str(len(shown)))
         self.tile_nums["hidden"].config(text=str(len(projects) - len(shown)))
         self.tile_nums["versions"].config(text=str(sum(len(p.get("versions", [])) for p in projects)))
-        when = lambda p: max([p.get("modified") or ""] + [v.get("date") or "" for v in p.get("versions", [])])
-        latest = max(shown, key=when, default=None)
+        when = App.updated_of
+        pinned = next((p for p in shown if p["id"] == self.cfg.get("panel_project")), None)
+        latest = pinned or max(shown, key=when, default=None)
+        if hasattr(self, "card_mode"):
+            pin, auto = ("\uE718", "\uE70D") if self.fam else ("\u2022", "\u25be")
+            self.card_mode.config(text=pin if pinned else auto, fg=ACCENT if pinned else MUTE)
         if latest is None:
             self.latest_title.config(text="No projects on the website yet")
             self.latest_sub.config(text="Scan your Projects folder to add some")
@@ -1677,6 +2137,9 @@ class App:
             self.latest_when.config(text=f"Updated {self.nice_date(when(latest))}    "
                                          f"{len(vs)} version{'' if len(vs) == 1 else 's'}")
         self.set_thumb(latest)
+        if hasattr(self, "panel_notes"):
+            self.panel_notes_for.config(text=f"Notes for {cut(latest['title'], 30)}" if latest else "Notes")
+            self.panel_notes.show(latest["id"] if latest else None)
         # recent activity (newest first)
         events = [e for e in reversed(self.log_lines) if not e[1].startswith(("Publishing", "Looking for"))][:5]
         for i, (dot, txt, tm) in enumerate(self.act_rows):
@@ -1689,6 +2152,17 @@ class App:
                 dot.config(fg=CARD)
                 txt.config(text=" " if i else "Nothing yet")
                 tm.config(text="")
+
+    @staticmethod
+    def updated_of(p):
+        """When a project last changed: its folder date or its newest version, whichever is later."""
+        return max([p.get("modified") or ""] + [v.get("date") or "" for v in p.get("versions", [])])
+
+    def pick_project(self):
+        for w in self.root.winfo_children():  # a second click closes the dropdown
+            if isinstance(w, ProjectPicker) and w.winfo_exists():
+                return w.destroy()
+        ProjectPicker(self, self.latest_card)
 
     @staticmethod
     def event_color(line):
@@ -1750,6 +2224,84 @@ class App:
         else:
             self.show()
 
+    def toggle_view(self):
+        """Click the title: swap the dashboard for All notes, or back."""
+        for w in self.root.winfo_children():
+            if isinstance(w, ProjectPicker):
+                w.destroy()
+        r = self.root
+        if self.view == "dash":
+            self.view = "notes"
+            self.dash.pack_forget()
+            self.notes_view.pack(fill="both", expand=True)
+            self.title_lbl.config(text="All notes")
+            self.title_chev.config(text=self.chev[1])
+            self.show_all_notes()
+        else:
+            self.view = "dash"
+            self.notes_view.pack_forget()
+            self.dash.pack(fill="both", expand=True)
+            self.title_lbl.config(text="Portfolio Updater")
+            self.title_chev.config(text=self.chev[0])
+            r.geometry(f"{PANEL_W}x{self.dash_h}")
+            if self.tray:
+                self.place_bottom_right()
+
+    def show_all_notes(self):
+        """Every note, grouped by project (the most recently noted project first). The panel
+        grows upward to fit them, up to the height of the screen, then the list scrolls."""
+        for w in self.all_inner.winfo_children():
+            w.destroy()
+        self._all_pics = []
+        L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+        try:
+            titles = {p["id"]: p["title"] for p in self.data()["projects"]}
+        except Exception:
+            titles = {}
+        groups = sorted(((k, v) for k, v in self.notes.items() if v),
+                        key=lambda g: max(n.get("at", "") for n in g[1]), reverse=True)
+        total = sum(len(v) for _, v in groups)
+        self.all_count.config(text=f"{total} note{'' if total == 1 else 's'} in {len(groups)} "
+                                   f"project{'' if len(groups) == 1 else 's'}" if groups else "No notes yet")
+        if not groups:
+            L(self.all_inner, text="Add notes to a project in Projects, and they'll all be listed here.",
+              fg=MUTE, font=("Segoe UI", 9), wraplength=300, justify="left").pack(anchor="w", pady=4)
+        for gi, (key, notes) in enumerate(groups):
+            head = plain(tk.Frame(self.all_inner, bg=CARD))
+            head.pack(fill="x", pady=(0 if gi == 0 else 10, 6))
+            L(head, text=titles.get(key, "(project no longer listed)"), fg=INK, font=("Segoe UI Semibold", 10)).pack(side="left")
+            L(head, text=f"{len(notes)} note{'' if len(notes) == 1 else 's'}", fg=MUTE, font=("Segoe UI", 8)).pack(
+                side="right", pady=(2, 0))
+            for i, n in enumerate(notes):
+                note_row(self.all_inner, n, lambda key=key, i=i: self.delete_from_all(key, i), 200, (56, 42), self._all_pics)
+        wheel_scrolls(self.all_canvas)
+        # size: at least the dashboard's height, at most the screen's, scrolling beyond that
+        r = self.root
+        r.update_idletasks()
+        content = max(self.all_inner.winfo_reqheight(), 40)
+        self.all_canvas.config(height=content)
+        r.update_idletasks()
+        left, top, right, bottom = work_area(r)
+        need, most = r.winfo_reqheight(), bottom - top - 24
+        h = min(max(need, self.dash_h), most)
+        self.all_canvas.config(height=max(40, content + (h - need)))
+        r.geometry(f"{PANEL_W}x{h}")
+        if self.tray and r.state() == "normal":
+            self.place_bottom_right()
+
+    def delete_from_all(self, key, i):
+        delete_note(self, key, i)
+        self.notes_changed()
+
+    def notes_changed(self):
+        """A note was added or deleted somewhere: update the panel and any open Manage window."""
+        self.refresh_panel()
+        if getattr(self, "view", "dash") == "notes":
+            self.show_all_notes()
+        for w in self.root.winfo_children():
+            if isinstance(w, Manage) and w.winfo_exists():
+                w.show_notes()
+
     def log(self, text):
         stamp = datetime.now()
         self.log_lines.append((stamp, text))
@@ -1804,6 +2356,9 @@ class App:
         self.save_cfg()
         if not self.tray:
             return self.quit()
+        for w in self.root.winfo_children():
+            if isinstance(w, ProjectPicker):
+                w.destroy()
         self.root.withdraw()
         if not self.cfg.get("tray_told"):
             self.tray.note("Still running in the tray. Right-click the icon to quit.")
@@ -1843,8 +2398,8 @@ class App:
             border = title = 0  # the borderless panel has no title bar or frame
         elif not (0 <= border <= 20 and 10 <= title <= 80):
             border, title = 8, 31  # typical Windows values, used before the window has been shown
-        if r.winfo_ismapped():  # once it's on screen, trust its real size
-            w, h = max(w, r.winfo_width()), max(h, r.winfo_height())
+        if w <= 1 or h <= 1:  # not sized yet: use what's on screen
+            w, h = r.winfo_width(), r.winfo_height()
         x = max(left, right - w - 2 * border - gap)
         y = max(top, bottom - h - title - border - gap)
         r.geometry(f"+{x}+{y}")
@@ -2379,10 +2934,16 @@ class App:
         root = Path(self.v_root.get())
         new_title = new_title or title
         try:
+            cur = next((p for p in load_data(root)["projects"] if p["title"] == title), None)
+            if cur and slug(new_title) != cur["id"]:
+                pull_latest(root)  # the page address will change: get the phone's latest photos first
             data = load_data(root)
             proj = next(p for p in data["projects"] if p["title"] == title)
             old_id = proj["id"]
             change_id(root, data, proj, new_title)  # the page address follows the title
+            if proj["id"] != old_id and old_id in self.notes:  # notes follow the project to its new address
+                self.notes[proj["id"]] = self.notes.pop(old_id)
+                save_notes(self.notes)
             proj["title"] = new_title  # the project's folder on TOAST-ARCHIVES keeps its name
             proj["summary"] = text
             proj["tags"] = tags
@@ -2411,9 +2972,11 @@ class App:
     def remove_project(self, title):
         root = Path(self.v_root.get())
         try:
+            pull_latest(root)  # get the phone's latest progress photos before removing this project's
             data = load_data(root)
             proj = next(p for p in data["projects"] if p["title"] == title)
             data["projects"].remove(proj)
+            drop_progress(root, proj["id"])
             d = root / "projects" / proj["id"]
             if proj.get("id") and d.is_dir() and inside(root, d):
                 shutil.rmtree(d, ignore_errors=True)
