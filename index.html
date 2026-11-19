@@ -98,6 +98,18 @@ main{padding:clamp(16px,4vw,48px);max-width:1280px;margin:0 auto}
 .lightbox img{max-width:92vw;max-height:80vh;object-fit:contain;box-shadow:0 10px 40px rgba(0,0,0,.5)}
 .lightbox p{margin:0;max-width:70ch;text-align:center;color:var(--ink)}
 .lightbox time{color:var(--mute);font-size:.9rem}
+/* "this was updated" notice: bottom-right, asks before changing anything on screen */
+.updnote{position:fixed;right:20px;bottom:20px;z-index:40;display:flex;align-items:center;gap:14px;max-width:min(440px,calc(100vw - 40px));
+  padding:12px 12px 12px 16px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.updnote p{margin:0;font-size:.95rem}
+.updnote small{display:block;color:var(--mute);font-size:.82rem}
+.updnote button{all:unset;cursor:pointer;font-weight:600;padding:7px 14px;white-space:nowrap}
+.updnote .go{background:var(--accent-deep);color:#fff}
+.updnote .go:hover{background:var(--accent);color:#121212}
+.updnote .x{color:var(--mute);padding:7px 8px}
+.updnote .x:hover{color:var(--ink)}
+.updnote button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:no-preference){.updnote{animation:upd .25s ease-out}@keyframes upd{from{transform:translateY(12px);opacity:0}}}
 @media (max-width:1000px){.wins{grid-template-columns:minmax(0,1fr)}.win:only-child .work{grid-template-columns:minmax(0,1fr)}.win:only-child .tl{position:static}}
 </style>
 </head>
@@ -581,7 +593,7 @@ function enlarge(src, cap, date) {
   box.focus();
 }
 
-function route() {
+function route(keepScroll) {
   wins.forEach(view => view.dispose());
   wins = [];
   const id = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
@@ -589,19 +601,80 @@ function route() {
   const p = visible().find(x => x.id === id) || visible().find(x => (x.aliases || []).includes(id));
   if (p && p.id !== id) history.replaceState(null, "", "#/" + encodeURIComponent(p.id));
   p ? project(p) : home();
-  window.scrollTo(0, 0);
+  if (!keepScroll) window.scrollTo(0, 0);
 }
 
 // "no-cache": always check GitHub for a newer project list, so renames and new versions
 // show up on the next page load instead of up to 10 minutes later.
-Promise.all([
+// ---- loading, and checking for updates while the page is open ----
+const loadData = () => Promise.all([
   fetch("data/projects.json", {cache: "no-cache"}).then(r => r.json()),
   fetch("data/progress.json", {cache: "no-cache"}).then(r => r.ok ? r.json() : {projects: {}}).catch(() => ({projects: {}})),
-]).then(([d, prog]) => {
+]).then(([d, prog]) => [d, prog && prog.projects ? prog : {projects: {}}]);
+const signature = (d, prog) => JSON.stringify([d, prog]);
+let liveSig = "", waiting = null;
+
+// what changed, in a few words: "Copper PC: new version"
+function describe(oldD, oldP, newD, newP) {
+  const seen = new Map((oldD.projects || []).map(p => [p.id, p]));
+  const out = [];
+  for (const p of newD.projects || []) {
+    if (p.hidden) continue;
+    const o = seen.get(p.id);
+    const photos = k => ((k.projects || {})[p.id] || []).length;
+    if (!o || o.hidden) out.push(`${p.title} was added`);
+    else if ((p.versions || []).length > (o.versions || []).length) out.push(`${p.title}: new version`);
+    else if (photos(newP) > photos(oldP)) out.push(`${p.title}: new progress photo`);
+    else if (JSON.stringify(p) !== JSON.stringify(o) || photos(newP) !== photos(oldP)) out.push(`${p.title} was updated`);
+  }
+  if (!out.length) return "The portfolio was updated";
+  return out.length === 1 ? out[0] : `${out[0]}, and ${out.length - 1} more update${out.length > 2 ? "s" : ""}`;
+}
+
+function showNotice(text) {
+  let box = document.querySelector(".updnote");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "updnote";
+    box.setAttribute("role", "status");
+    box.setAttribute("aria-live", "polite");
+    document.body.appendChild(box);
+  }
+  box.innerHTML = `<p>${esc(text)}<small>Refresh to see the latest.</small></p>
+    <button class="go">Refresh</button><button class="x" aria-label="Dismiss">&#x2715;</button>`;
+  box.querySelector(".go").onclick = applyUpdate;
+  box.querySelector(".x").onclick = () => box.remove();
+}
+
+function applyUpdate() {
+  if (!waiting) return;
+  [DATA, PROGRESS] = waiting.data;
+  liveSig = waiting.sig;
+  waiting = null;
+  document.querySelector(".updnote")?.remove();
+  cache.clear();   // reload models, so a re-saved file shows its new version
+  route(true);     // redraw the current page in place, keeping your scroll position
+}
+
+async function checkForUpdates() {
+  if (document.hidden || !DATA) return;  // don't use data while the tab is in the background
+  try {
+    const [d, prog] = await loadData();
+    const sig = signature(d, prog);
+    if (sig === liveSig || (waiting && sig === waiting.sig)) return;
+    waiting = {sig, data: [d, prog]};
+    showNotice(describe(DATA, PROGRESS, d, prog));
+  } catch {}  // offline for a moment: try again next time
+}
+
+loadData().then(([d, prog]) => {
   DATA = d;
-  PROGRESS = prog && prog.projects ? prog : {projects: {}};
-  addEventListener("hashchange", route);
+  PROGRESS = prog;
+  liveSig = signature(d, prog);
+  addEventListener("hashchange", () => route());
   route();
+  setInterval(checkForUpdates, 60000);  // once a minute
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkForUpdates(); });
 }).catch(() => {
   app.innerHTML = "<p>Could not load data/projects.json. Serve this folder over http (for example, run <code>python -m http.server</code> here) instead of opening the file directly.</p>";
 });

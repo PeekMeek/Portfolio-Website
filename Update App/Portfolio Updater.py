@@ -612,6 +612,42 @@ class Tray:
             pass
 
 
+def force_foreground(win):
+    """Make a window the active one, with the keyboard, even while you're working in another
+    program. Windows normally blocks this (the window only flashes on the taskbar), so the
+    updater briefly joins the active program's input queue, which Windows allows."""
+    try:
+        win.deiconify()
+        win.lift()
+        win.update_idletasks()
+    except tk.TclError:
+        return
+    if os.name != "nt":
+        return win.focus_force()
+    try:
+        import ctypes
+        u, k = ctypes.windll.user32, ctypes.windll.kernel32
+        hwnd = u.GetParent(win.winfo_id())
+        mine = k.GetCurrentThreadId()
+        theirs = u.GetWindowThreadProcessId(u.GetForegroundWindow(), None)
+        if theirs and theirs != mine:
+            u.AttachThreadInput(theirs, mine, True)
+        u.ShowWindow(hwnd, 5)  # SW_SHOW
+        u.BringWindowToTop(hwnd)
+        u.SetForegroundWindow(hwnd)
+        u.SetActiveWindow(hwnd)
+        if theirs and theirs != mine:
+            u.AttachThreadInput(theirs, mine, False)
+        if u.GetForegroundWindow() != hwnd:
+            # still refused: a tap of Alt is what Windows itself treats as permission to switch
+            u.keybd_event(0x12, 0, 0, 0)
+            u.keybd_event(0x12, 0, 2, 0)
+            u.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+    win.focus_force()
+
+
 def center_on(win, master):
     """Open a dialog centered over the updater window, kept on screen."""
     try:
@@ -1291,7 +1327,10 @@ class Prompt(tk.Toplevel):
         center_on(self, app.root)
         self.transient(app.root); self.grab_set(); self.lift()
         self.attributes("-topmost", True)
-        self.note.focus_set()
+        # take the keyboard from whatever you were in (e.g. Designcenter), so you can just type
+        force_foreground(self)
+        self.note.focus_force()
+        self.after(150, lambda: (force_foreground(self), self.note.focus_force()) if self.winfo_exists() else None)
         app.root.wait_window(self)
 
     def pick(self):
