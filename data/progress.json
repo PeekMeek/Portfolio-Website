@@ -6,6 +6,12 @@
         "image": "projects/3d-printed-portable-pc/progress/2026-11-18-06-45-13-w0jq.jpg",
         "caption": "PSU fitment test. Notice the top of the IO shield having printing defects due to the height",
         "date": "2026-11-18T06:45:13.385Z"
+      },
+      {
+        "id": "2026-11-19-22-36-47-i8z4",
+        "image": "projects/3d-printed-portable-pc/progress/2026-11-19-22-36-47-i8z4.jpg",
+        "caption": "New dovetail method works, but it is held together through friction and no locking. Need to add some more material to the outer wall to secure it in place",
+        "date": "2026-11-19T22:36:47.432Z"
       }
     ]
   }
