@@ -245,10 +245,20 @@
           "changes": {
             "V1_Cover": "modified"
           }
+        },
+        {
+          "id": "v14",
+          "date": "2026-11-18",
+          "note": "Test change for PC",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v14.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-18T16:01:58",
+      "modified": "2026-11-18T23:52:48",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
