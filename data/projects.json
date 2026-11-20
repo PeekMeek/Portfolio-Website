@@ -275,10 +275,18 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v7",
+          "date": "2026-11-20",
+          "note": "Test for Mani",
+          "source": "V1_Cover.stp",
+          "file": "projects/3d-printed-portable-pc/v1-cover/v7.step",
+          "changes": {}
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-20T13:32:58",
+      "modified": "2026-11-20T17:25:47",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
