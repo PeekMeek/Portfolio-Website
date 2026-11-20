@@ -17,6 +17,7 @@ from pathlib import Path
 CONFIG = Path(os.environ.get("APPDATA", Path.home())) / "portfolio_updater" / "config.json"
 NOTES_FILE = CONFIG.with_name("notes.json")  # private notes, kept on this computer only
 NOTE_PICS = CONFIG.with_name("note_pictures")  # pictures pasted into notes (also private)
+LOG_FILE = CONFIG.with_name("updater.log")  # errors go here, since the app has no console window
 
 
 def load_notes():
@@ -3059,18 +3060,49 @@ def relaunch_without_terminal():
         return False
 
 
+def start_log():
+    """The updater runs without a console window, so errors would vanish. Send them to
+    updater.log next to the settings instead (kept under about 1 MB)."""
+    import sys, traceback
+    try:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size > 1_000_000:
+            LOG_FILE.write_text(LOG_FILE.read_text("utf-8", errors="replace")[-200_000:], "utf-8")
+        log = open(LOG_FILE, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        return None
+    log.write(f"\n--- started {datetime.now():%Y-%m-%d %H:%M:%S} with {sys.executable} {' '.join(sys.argv[1:])}\n")
+    if sys.stderr is None or Path(sys.executable).name.lower() == "pythonw.exe":
+        sys.stdout = sys.stderr = log  # no console: print errors to the log
+    sys.excepthook = lambda t, v, tb: traceback.print_exception(t, v, tb, file=log)
+    threading.excepthook = lambda a: traceback.print_exception(a.exc_type, a.exc_value, a.exc_traceback, file=log)
+    return log
+
+
 if __name__ == "__main__":
-    import sys
+    import sys, traceback
     if relaunch_without_terminal():  # the window-less copy takes over; this one (and its terminal) closes
         sys.exit(0)
     if already_running():  # opened twice: bring the running one forward instead
         sys.exit(0)
-    app = App()
-    if "--minimized" in sys.argv:  # used by the Windows startup shortcut
-        if app.tray:
-            app.root.withdraw()  # start quietly in the tray
-        else:
-            app.root.iconify()
-    elif app.tray:
-        app.root.after(50, app.show)  # opened by hand: appear in the corner by the tray icon
-    app.run()
+    log = start_log()
+    try:
+        app = App()
+        # errors inside button clicks and timers: log them instead of losing them
+        app.root.report_callback_exception = lambda t, v, tb: traceback.print_exception(t, v, tb, file=sys.stderr)
+        if "--minimized" in sys.argv:  # used by the Windows startup shortcut
+            if app.tray:
+                app.root.withdraw()  # start quietly in the tray
+            else:
+                app.root.iconify()
+        elif app.tray:
+            app.root.after(50, app.show)  # opened by hand: appear in the corner by the tray icon
+        app.run()
+    except Exception as e:
+        traceback.print_exc(file=log or sys.stderr)
+        try:  # say so on screen, instead of just disappearing
+            messagebox.showerror("Portfolio Updater couldn't start",
+                                 f"{type(e).__name__}: {e}\n\nThe details are in:\n{LOG_FILE}")
+        except Exception:
+            pass
+        sys.exit(1)

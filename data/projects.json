@@ -265,10 +265,20 @@
           "changes": {
             "V1_Case_Base": "modified"
           }
+        },
+        {
+          "id": "v16",
+          "date": "2026-11-20",
+          "note": "Reversed orientation of dovetails to improve DFAM",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v16.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-19T14:32:32",
+      "modified": "2026-11-20T13:32:58",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },
