@@ -283,10 +283,20 @@
           "source": "V1_Cover.stp",
           "file": "projects/3d-printed-portable-pc/v1-cover/v7.step",
           "changes": {}
+        },
+        {
+          "id": "v17",
+          "date": "2026-11-26",
+          "note": "Added a 10mm spacer to the cable shroud. Initial fit tests make the shroud impossible due to cable radii",
+          "source": "V1_Case_Base.stp",
+          "file": "projects/3d-printed-portable-pc/v1-case-base/v17.step",
+          "changes": {
+            "V1_Case_Base": "modified"
+          }
         }
       ],
       "folder": "\\\\TOAST-ARCHIVES\\Projects\\3d Printed SFF PC",
-      "modified": "2026-11-20T17:25:47",
+      "modified": "2026-11-26T13:32:56",
       "image": "projects/3d-printed-portable-pc/cover.png",
       "image_from_folder": true
     },

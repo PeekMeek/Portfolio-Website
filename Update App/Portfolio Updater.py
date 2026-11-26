@@ -1060,14 +1060,20 @@ class PictureViewer(tk.Toplevel):
                 pass
 
 
-def note_row(parent, n, on_delete, wrap, thumb, pics):
-    """One note: a darker rounded box with a red bullet, an optional picture (click to
-    enlarge), the text, its date underneath, and an x to delete it."""
+def note_row(parent, n, on_delete, wrap, thumb, pics, on_toggle=None):
+    """One note: a darker rounded box with a bullet, an optional picture (click to enlarge),
+    the text, its date underneath, a check mark to mark it completed, and an x to delete it.
+    A completed note is dimmed and struck through, with a green check."""
     L = lambda p, **kw: plain(tk.Label(p, bg=p.cget("bg"), **{"anchor": "w", **kw}))
+    done = bool(n.get("done"))
     c = Card(parent, color=NOTE_BG, radius=10, padx=10, pady=6)
     c.pack(fill="x", pady=(0, 6))
-    L(c.body, text="●", fg=ACCENT, font=("Segoe UI", 7)).pack(side="left", anchor="n", pady=(5, 0), padx=(0, 8))
-    Link(c.body, "✕", on_delete, hover=ACCENT, font=("Segoe UI", 9)).pack(side="right", anchor="n", padx=(10, 0))
+    L(c.body, text="\u25cf", fg=GREEN if done else ACCENT, font=("Segoe UI", 7)).pack(
+        side="left", anchor="n", pady=(5, 0), padx=(0, 8))
+    Link(c.body, "\u2715", on_delete, hover=ACCENT, font=("Segoe UI", 9)).pack(side="right", anchor="n", padx=(10, 0))
+    if on_toggle:
+        Link(c.body, "\u2713", on_toggle, fg=GREEN if done else MUTE, hover=MUTE if done else GREEN,
+             font=("Segoe UI Semibold", 11)).pack(side="right", anchor="n", padx=(10, 0))
     pic = NOTE_PICS / n["image"] if n.get("image") else None
     if pic is not None and pic.is_file() and Image is not None:
         try:
@@ -1081,9 +1087,28 @@ def note_row(parent, n, on_delete, wrap, thumb, pics):
     words = plain(tk.Frame(c.body, bg=NOTE_BG))
     words.pack(side="left", fill="x", expand=True)
     if n.get("text"):
-        L(words, text=n["text"], fg=NOTE_INK, font=("Segoe UI", 10), wraplength=wrap, justify="left").pack(anchor="w", fill="x")
-    L(words, text=App.nice_date(n.get("at", "")), fg=MUTE, font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
+        L(words, text=n["text"], fg=MUTE if done else NOTE_INK,
+          font=("Segoe UI", 10, "overstrike") if done else ("Segoe UI", 10),
+          wraplength=wrap, justify="left").pack(anchor="w", fill="x")
+    when = App.nice_date(n.get("at", ""))
+    if done and n.get("done_at"):
+        when += f"    completed {App.nice_date(n['done_at'])}"
+    L(words, text=when, fg=MUTE, font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
     return c
+
+
+def toggle_note(app, key, i):
+    """Mark note i of a project completed, or open again."""
+    notes = app.notes.get(key, [])
+    if 0 <= i < len(notes):
+        n = notes[i]
+        if n.get("done"):
+            n.pop("done", None)
+            n.pop("done_at", None)
+        else:
+            n["done"] = True
+            n["done_at"] = datetime.now().isoformat(timespec="seconds")
+        save_notes(app.notes)
 
 
 def delete_note(app, key, i):
@@ -1115,11 +1140,13 @@ def wheel_scrolls(canvas):
 class NotesList(tk.Frame):
     """A project's private notes as darker rounded boxes, oldest at the top and newest at the
     bottom, in a scrolling area of fixed height. Each note has a date and an x to delete it."""
-    def __init__(self, parent, app, height=128, wrap=430, empty="No notes yet.", thumb=(72, 54)):
+    def __init__(self, parent, app, height=128, wrap=430, empty="No notes yet.", thumb=(72, 54), toggle_in=None):
         bg = parent.cget("bg")
         super().__init__(parent, bg=bg, bd=0, highlightthickness=0)
         self.app, self.wrap, self.empty, self.key, self._sig = app, wrap, empty, None, None
-        self.thumb, self._pics = thumb, []
+        self.thumb, self._pics, self.show_done = thumb, [], False
+        # "Show completed (2)" / "Hide completed", at the top right of the notes card
+        self.done_link = Link(toggle_in, "", self.flip_done, font=("Segoe UI", 9)) if toggle_in is not None else None
         self.canvas = plain(tk.Canvas(self, bg=bg, height=height))
         sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview, style="Card.Vertical.TScrollbar")
         self.canvas.config(yscrollcommand=sb.set)
@@ -1132,7 +1159,7 @@ class NotesList(tk.Frame):
 
     def show(self, key, force=False):
         notes = self.app.notes.get(key, []) if key else []
-        sig = (key, json.dumps(notes))
+        sig = (key, json.dumps(notes), self.show_done)
         if sig == self._sig and not force:
             return  # nothing changed: don't redraw (the panel refreshes often)
         self._sig, self.key = sig, key
@@ -1140,10 +1167,25 @@ class NotesList(tk.Frame):
             w.destroy()
         self._pics = []
         L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
+        done = sum(1 for n in notes if n.get("done"))
+        if self.done_link is not None:
+            if done:
+                self.done_link.config(text="Hide completed" if self.show_done else f"Show completed ({done})")
+                if not self.done_link.winfo_ismapped():
+                    others = [w for w in self.done_link.master.pack_slaves() if w is not self.done_link]
+                    # packed ahead of everything else in the header, so it sits at the far right
+                    self.done_link.pack(side="right", **({"before": others[0]} if others else {}))
+            else:
+                self.done_link.pack_forget()
+        shown = [(i, n) for i, n in enumerate(notes) if self.show_done or not n.get("done")]
         if not notes:
             L(self.inner, text=self.empty, fg=MUTE, font=("Segoe UI", 9)).pack(anchor="w", pady=4)
-        for i, n in enumerate(notes):
-            note_row(self.inner, n, lambda i=i: self.delete(i), self.wrap, self.thumb, self._pics)
+        elif not shown:
+            L(self.inner, text=f"All done: {done} completed note{'' if done == 1 else 's'}.", fg=MUTE,
+              font=("Segoe UI", 9)).pack(anchor="w", pady=4)
+        for i, n in shown:  # i stays the note's place in the full list
+            note_row(self.inner, n, lambda i=i: self.delete(i), self.wrap, self.thumb, self._pics,
+                     on_toggle=lambda i=i: self.toggle(i))
         wheel_scrolls(self.canvas)
         self.after(30, lambda: self.canvas.yview_moveto(1.0))  # show the newest
 
@@ -1151,6 +1193,15 @@ class NotesList(tk.Frame):
         delete_note(self.app, self.key, i)
         self.show(self.key, force=True)
         self.app.notes_changed()
+
+    def toggle(self, i):
+        toggle_note(self.app, self.key, i)
+        self.show(self.key, force=True)
+        self.app.notes_changed()
+
+    def flip_done(self):
+        self.show_done = not self.show_done
+        self.show(self.key, force=True)
 
 
 class ProjectPicker(tk.Toplevel):
@@ -1452,8 +1503,8 @@ class Manage(tk.Toplevel):
         top.pack(fill="x")
         self.notes_for = head(top, "Notes")
         self.notes_for.pack(side="left")
-        hint(top, "Private: kept on this computer, not on the website").pack(side="right")
-        self.notes_list = NotesList(b, app, height=128, wrap=430,
+        hint(top, "Private: kept on this computer, not on the website").pack(side="right", padx=(0, 12))
+        self.notes_list = NotesList(b, app, height=128, wrap=400, toggle_in=top,
                                     empty="No notes yet. Type one below and press Enter.")
         self.notes_list.pack(fill="x", pady=(8, 8))
         box = Card(b, color=FIELD, radius=12, padx=12, pady=6, outline=LINE)
@@ -1976,8 +2027,20 @@ class App:
     def build_panel(self):
         r, fam = self.root, icon_family(self.root)
         r.configure(bg=BG)
+        # grip along the top edge: drag it up to make the panel (and its Notes list) taller
+        self.grip = plain(tk.Frame(r, bg=BG, height=12, cursor="sb_v_double_arrow"))
+        self.grip.pack(fill="x")
+        self.grip.pack_propagate(False)
+        self.grip_bar = plain(tk.Frame(self.grip, bg="#3a3a3a", width=40, height=4, cursor="sb_v_double_arrow"))
+        self.grip_bar.place(relx=.5, rely=.5, anchor="center")
+        for w in (self.grip, self.grip_bar):
+            w.bind("<Enter>", lambda e: self.grip_bar.config(bg=MUTE))
+            w.bind("<Leave>", lambda e: self.grip_bar.config(bg="#3a3a3a"))
+            w.bind("<ButtonPress-1>", self.grip_start)
+            w.bind("<B1-Motion>", self.grip_drag)
+            w.bind("<ButtonRelease-1>", self.grip_end)
         outer = plain(tk.Frame(r, bg=BG))
-        outer.pack(fill="both", expand=True, padx=14, pady=(12, 12))
+        outer.pack(fill="both", expand=True, padx=14, pady=(2, 12))
         L = lambda parent, **kw: plain(tk.Label(parent, bg=parent.cget("bg"), **{"anchor": "w", **kw}))
 
         # header: logo, name, watching status, and three small icon buttons
@@ -2046,7 +2109,7 @@ class App:
         top.pack(fill="x", pady=(0, 6))
         self.panel_notes_for = L(top, text="Notes", fg=MUTE, font=("Segoe UI Semibold", 9))
         self.panel_notes_for.pack(side="left")
-        self.panel_notes = NotesList(nc.body, self, height=96, wrap=180, thumb=(56, 42),
+        self.panel_notes = NotesList(nc.body, self, height=96, wrap=160, thumb=(56, 42), toggle_in=top,
                                      empty="No notes for this project yet. Add them in Projects.")
         self.panel_notes.pack(fill="x")
 
@@ -2115,6 +2178,8 @@ class App:
         self.all_count = L(top, text="", fg=MUTE, font=("Segoe UI Semibold", 9))
         self.all_count.pack(side="left")
         Link(top, "Back", self.toggle_view, font=("Segoe UI", 9)).pack(side="right")
+        self.all_show_done = False
+        self.all_done_link = Link(top, "", self.flip_all_done, font=("Segoe UI", 9))
         wrap = plain(tk.Frame(allc.body, bg=CARD))
         wrap.pack(fill="both", expand=True)
         self.all_canvas = plain(tk.Canvas(wrap, bg=CARD, height=200))
@@ -2128,8 +2193,9 @@ class App:
         self.all_canvas.bind("<Configure>", lambda e: self.all_canvas.itemconfigure(self._all_win, width=e.width))
 
         r.update_idletasks()
-        self.dash_h = r.winfo_reqheight()  # the dashboard's height; All notes can grow taller
-        r.geometry(f"{PANEL_W}x{self.dash_h}")
+        self.dash_h = r.winfo_reqheight()  # the dashboard's smallest height; All notes can grow taller
+        self.extra = 0
+        self.set_extra(self.cfg.get("panel_extra", 0))  # the height you last dragged it to
         r.resizable(False, False)
         self.refresh_panel()
 
@@ -2283,9 +2349,50 @@ class App:
             self.dash.pack(fill="both", expand=True)
             self.title_lbl.config(text="Portfolio Updater")
             self.title_chev.config(text=self.chev[0])
-            r.geometry(f"{PANEL_W}x{self.dash_h}")
+            self.set_extra(self.extra)
             if self.tray:
                 self.place_bottom_right()
+
+    # ---- dragging the panel taller ----
+    NOTES_BASE = 96  # the Notes list's height at the panel's smallest size
+
+    def max_extra(self):
+        left, top, right, bottom = work_area(self.root)
+        return max(0, (bottom - top - 24) - self.dash_h)
+
+    def set_extra(self, extra, bottom=None):
+        """Make the dashboard `extra` pixels taller than its smallest size; the Notes list takes it all.
+        bottom: keep the panel's bottom edge here (while dragging)."""
+        self.extra = int(min(max(0, extra), self.max_extra()))
+        if getattr(self, "view", "dash") != "dash":
+            return
+        r = self.root
+        self.panel_notes.canvas.config(height=self.NOTES_BASE + self.extra)
+        h = self.dash_h + self.extra
+        if bottom is not None:
+            r.geometry(f"{PANEL_W}x{h}+{r.winfo_x()}+{bottom - h}")
+        else:
+            r.geometry(f"{PANEL_W}x{h}")
+            if self.tray and r.state() == "normal":
+                self.place_bottom_right()
+
+    def grip_start(self, e):
+        if getattr(self, "view", "dash") != "dash":
+            return
+        r = self.root
+        self._drag = (e.y_root, self.extra, r.winfo_y() + self.dash_h + self.extra)
+
+    def grip_drag(self, e):
+        if not getattr(self, "_drag", None):
+            return
+        y0, extra0, bottom = self._drag
+        self.set_extra(extra0 + (y0 - e.y_root), bottom=bottom)  # dragging up = taller
+
+    def grip_end(self, e):
+        if getattr(self, "_drag", None):
+            self._drag = None
+            self.cfg["panel_extra"] = self.extra
+            self.save_cfg()
 
     def show_all_notes(self):
         """Every note, grouped by project (the most recently noted project first). The panel
@@ -2298,9 +2405,16 @@ class App:
             titles = {p["id"]: p["title"] for p in self.data()["projects"]}
         except Exception:
             titles = {}
-        groups = sorted(((k, v) for k, v in self.notes.items() if v),
+        done = sum(1 for v in self.notes.values() for n in v if n.get("done"))
+        if done:
+            self.all_done_link.config(text="Hide completed" if self.all_show_done else f"Show completed ({done})")
+            self.all_done_link.pack(side="right", padx=(0, 14))
+        else:
+            self.all_done_link.pack_forget()
+        keep = lambda n: self.all_show_done or not n.get("done")
+        groups = sorted(((k, v) for k, v in self.notes.items() if any(keep(n) for n in v)),
                         key=lambda g: max(n.get("at", "") for n in g[1]), reverse=True)
-        total = sum(len(v) for _, v in groups)
+        total = sum(1 for _, v in groups for n in v if keep(n))
         self.all_count.config(text=f"{total} note{'' if total == 1 else 's'} in {len(groups)} "
                                    f"project{'' if len(groups) == 1 else 's'}" if groups else "No notes yet")
         if not groups:
@@ -2310,10 +2424,13 @@ class App:
             head = plain(tk.Frame(self.all_inner, bg=CARD))
             head.pack(fill="x", pady=(0 if gi == 0 else 10, 6))
             L(head, text=titles.get(key, "(project no longer listed)"), fg=INK, font=("Segoe UI Semibold", 10)).pack(side="left")
-            L(head, text=f"{len(notes)} note{'' if len(notes) == 1 else 's'}", fg=MUTE, font=("Segoe UI", 8)).pack(
+            count = sum(1 for n in notes if keep(n))
+            L(head, text=f"{count} note{'' if count == 1 else 's'}", fg=MUTE, font=("Segoe UI", 8)).pack(
                 side="right", pady=(2, 0))
             for i, n in enumerate(notes):
-                note_row(self.all_inner, n, lambda key=key, i=i: self.delete_from_all(key, i), 200, (56, 42), self._all_pics)
+                if keep(n):
+                    note_row(self.all_inner, n, lambda key=key, i=i: self.delete_from_all(key, i), 180, (56, 42),
+                             self._all_pics, on_toggle=lambda key=key, i=i: self.toggle_from_all(key, i))
         wheel_scrolls(self.all_canvas)
         # size: at least the dashboard's height, at most the screen's, scrolling beyond that
         r = self.root
@@ -2323,7 +2440,7 @@ class App:
         r.update_idletasks()
         left, top, right, bottom = work_area(r)
         need, most = r.winfo_reqheight(), bottom - top - 24
-        h = min(max(need, self.dash_h), most)
+        h = min(max(need, self.dash_h + self.extra), most)
         self.all_canvas.config(height=max(40, content + (h - need)))
         r.geometry(f"{PANEL_W}x{h}")
         if self.tray and r.state() == "normal":
@@ -2332,6 +2449,14 @@ class App:
     def delete_from_all(self, key, i):
         delete_note(self, key, i)
         self.notes_changed()
+
+    def toggle_from_all(self, key, i):
+        toggle_note(self, key, i)
+        self.notes_changed()
+
+    def flip_all_done(self):
+        self.all_show_done = not self.all_show_done
+        self.show_all_notes()
 
     def notes_changed(self):
         """A note was added or deleted somewhere: update the panel and any open Manage window."""
